@@ -8,7 +8,10 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  pcl_ros 
+  pcl_conversions
 )
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -96,6 +99,9 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
 )
+
+add_executable(pcl_publisher src/pcl_publisher.cpp)
+target_link_libraries(pcl_publisher ${catkin_LIBRARIES})
 
 ## Declare a cpp library
 # add_library(coop_pcl
