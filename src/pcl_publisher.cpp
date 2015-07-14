@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/io/pcd_io.h>
 #include <tf/transform_listener.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -13,35 +14,40 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 int main(int argc, char** argv)
 {
-   // Initialize ROS
+  /*if(argc != 2){ // need to pass in the name of the ar_marker tag to track upon running program
+	cout << "You must pass in the name of ar_marker to track! (ex. pcl_publisher.exe ar_marker_0)";
+	return 0;
+  }*/
+
+  // Initialize ROS
   ros::init (argc, argv, "pub_pcl");
   ros::NodeHandle nh;
  
   // Create ROS publisher for the output point cloud
   ros::Publisher pub = nh.advertise<PointCloud>("points2", 1);
 
-  PointCloud::Ptr msg(new PointCloud);
-  msg->header.frame_id = "usb_cam";
-  msg->height = 1;
-  msg->width = 30000; // note: always make width the size of the total number of pts in ptcloud
-  //msg->is_dense = false;
-  msg->points.resize(msg->width * msg->height);
+  PointCloud::Ptr cloud(new PointCloud);
+  cloud->header.frame_id = "usb_cam";
+  cloud->height = 1;
+  cloud->width = 30000; // note: always make width the size of the total number of pts in ptcloud
+  //cloud->is_dense = false;
+  cloud->points.resize(cloud->width * cloud->height);
 
   tf::TransformListener transform_listener;
   
-  string ar_marker = "ar_marker_0";
+  string ar_marker = "ar_marker_1"; // argv[1]
 
-  int i = 0;
+  int idx_pts = 0;
   ros::Rate loop_rate(4);
-  while (nh.ok() && i < msg->points.size())
+  while (nh.ok() && idx_pts < cloud->points.size())
   {
     tf::StampedTransform transform;
     try{
       ros::Time now = ros::Time::now();
       transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(3.0));
 
-	  cout << "Looking up tf from usb_cam to ar_marker...\n";
-      // can't always guaruntee that it will be called ar_marker?
+	  cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
+      // can't always guarantee that it will be called any particular ar_marker_#?
       transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
     }
     catch (tf::TransformException ex){
@@ -49,11 +55,11 @@ int main(int argc, char** argv)
       ros::Duration(1.0).sleep();
     }
 
-    cout << "Found tf from usb_cam to ar_marker...\n";
-	double x = 0.10;
-	while(x >= -0.10){
-		double y = -0.10;
-		while(y <= 0.10){
+    cout << "Found tf from usb_cam to " << ar_marker << "...\n";
+	double x = 0.05;
+	while(x >= -0.05){
+		double y = -0.02;
+		while(y <= 0.02){
 			// get stamped pose wrt ar_marker
 			tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
 			tf::Stamped<tf::Pose> transformed_corner;
@@ -63,20 +69,24 @@ int main(int argc, char** argv)
 			double tf_x = transformed_corner.getOrigin().x();
 			double tf_y = transformed_corner.getOrigin().y();
 			double tf_z = transformed_corner.getOrigin().z();
-			//msg->points.push_back (pcl::PointXYZ(tf_x, tf_y, tf_z));
-			msg->points[i].x = tf_x;
-			msg->points[i].y = tf_y;
-			msg->points[i].z = tf_z;
+
+			cloud->points[idx_pts].x = tf_x;
+			cloud->points[idx_pts].y = tf_y;
+			cloud->points[idx_pts].z = tf_z;
 			
-			i+=1;
+			idx_pts+=1;
 			cout << "Added (" << tf_x << "," << tf_y << "," << tf_z << ")\n";
-			y += 0.05;
+			y += 0.02;
 		}
-		x -= 0.05;
+		x -= 0.02;
 	}
 
-    msg->header.stamp = ros::Time::now().toNSec();
-    pub.publish(msg);
+    cloud->header.stamp = ros::Time::now().toNSec();
+	pub.publish(cloud);
+
+	/*string filename = "test_pcd.pcd";
+    pcl::io::savePCDFile(filename, *cloud, false);
+    cout << "Saved " << cloud->points.size() << " data points to " << filename << "\n";*/
   }
 
   ros::spin();
