@@ -23,13 +23,13 @@ int main(int argc, char** argv)
   PointCloud::Ptr msg(new PointCloud);
   msg->header.frame_id = "usb_cam";
   msg->height = 1;
-  msg->width = 5000; // note: always make width the size of the total number of pts in ptcloud
+  msg->width = 30000; // note: always make width the size of the total number of pts in ptcloud
   //msg->is_dense = false;
   msg->points.resize(msg->width * msg->height);
 
   tf::TransformListener transform_listener;
   
-  string ar_marker = "ar_marker_2";
+  string ar_marker = "ar_marker_0";
 
   int i = 0;
   ros::Rate loop_rate(4);
