@@ -23,7 +23,7 @@
 </node>
 
 <!-- TRACK AR TAGS -->
-<arg name="marker_size" default="3.5" />  <!-- default="5.6" -->
+<arg name="marker_size" default="3.5" /> 
 <arg name="max_new_marker_error" default="0.08" />
 <arg name="max_track_error" default="0.2" />
 
@@ -38,7 +38,7 @@
  
 <!-- GENERATE POINT CLOUD FROM AR TAGS -->
 <node name="pt_cloud" pkg="coop_pcl" type="pcl_publisher" output="screen" />
-<node name="pt_cloud2" pkg="coop_pcl" type="pcl_publisher" output="screen" />
+<!--<node name="pt_cloud2" pkg="coop_pcl" type="pcl_publisher" output="screen" />-->
 
 <!-- GET DATA RATE INFORMATION -->
 <!--<node name="data_rate" pkg="coop_pcl" type="DataRater.py" output="screen" /> -->

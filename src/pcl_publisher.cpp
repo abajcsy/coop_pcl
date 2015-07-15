@@ -2,34 +2,26 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl_conversions/pcl_conversions.h>
+
 #include <tf/transform_listener.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <pcl_conversions/pcl_conversions.h>
 #include <iostream>
 #include <string>
+
+#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
 
 using namespace std;
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
-int main(int argc, char** argv)
-{
-  /*if(argc != 2){ // need to pass in the name of the ar_marker tag to track upon running program
-	cout << "You must pass in the name of ar_marker to track! (ex. pcl_publisher.exe ar_marker_0)";
-	return 0;
-  }*/
-
-  // Initialize ROS
-  ros::init (argc, argv, "pub_pcl");
-  ros::NodeHandle nh;
- 
-  // Create ROS publisher for the output point cloud
-  ros::Publisher pub = nh.advertise<PointCloud>("points2", 1);
-
+void publishPCL(ros::NodeHandle nh, ros::Publisher pub) {
   PointCloud::Ptr cloud(new PointCloud);
   cloud->header.frame_id = "usb_cam";
   cloud->height = 1;
-  cloud->width = 30000; // note: always make width the size of the total number of pts in ptcloud
+  cloud->width = 15000; // note: always make width the size of the total number of pts in ptcloud
   //cloud->is_dense = false;
   cloud->points.resize(cloud->width * cloud->height);
 
@@ -39,8 +31,7 @@ int main(int argc, char** argv)
 
   int idx_pts = 0;
   ros::Rate loop_rate(4);
-  while (nh.ok() && idx_pts < cloud->points.size())
-  {
+  while (nh.ok() && idx_pts < cloud->points.size()) {
     tf::StampedTransform transform;
     try{
       ros::Time now = ros::Time::now();
@@ -80,14 +71,30 @@ int main(int argc, char** argv)
 		}
 		x -= 0.02;
 	}
-
     cloud->header.stamp = ros::Time::now().toNSec();
 	pub.publish(cloud);
-
-	/*string filename = "test_pcd.pcd";
-    pcl::io::savePCDFile(filename, *cloud, false);
-    cout << "Saved " << cloud->points.size() << " data points to " << filename << "\n";*/
   }
 
+  // if program was killed or point cloud filled filled 
+  if(!nh.ok() || idx_pts >= cloud->points.size()){	// TODO: This is still a hack-y way to save the point cloud. Integrate asynchronous keyboard input command to stop data collection and write pc
+  	cout << "Finished gathering and publishing point cloud.\n";
+  	string filename = "test_pcd.pcd";
+  	pcl::io::savePCDFileASCII(filename, *cloud);
+  	cout << "Saved " << idx_pts << " points out of total point cloud space of " << cloud->points.size() << " to " << filename << "\n";
+  }
+}
+
+int main(int argc, char** argv) {
+
+  // Initialize ROS
+  ros::init (argc, argv, "pub_pcl");
+  ros::NodeHandle nh;
+
+  // Create ROS publisher for the output point cloud
+  ros::Publisher pub = nh.advertise<PointCloud>("points2", 1);
+  
+  // Call point cloud publisher function
+  publishPCL(nh, pub);
+ 
   ros::spin();
 }
