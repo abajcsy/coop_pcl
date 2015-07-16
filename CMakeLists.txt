@@ -102,6 +102,9 @@ include_directories(
 
 add_executable(pcl_publisher src/pcl_publisher.cpp)
 target_link_libraries(pcl_publisher ${catkin_LIBRARIES})
+add_executable(octree_visualizer src/octree_visualizer.cpp)
+target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
+
 
 ## Declare a cpp library
 # add_library(coop_pcl

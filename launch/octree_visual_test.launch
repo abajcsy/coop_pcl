@@ -1,0 +1,6 @@
+<launch>
+	
+	<!-- RUN OCTREE VISUALIZER -->
+	<node name="octree_visualizer" pkg="coop_pcl" type="octree_visualizer" output="screen" args="0.01"/>
+
+</launch>
