@@ -12,26 +12,62 @@
 #include <string>
 
 #include <stdio.h>
+#include <termios.h>
 
 using namespace std;
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloud<pcl::PointXYZ> OctreePC;
 
+static struct termios oldt, newt;
+
+/* Implements a non-blocking getchar() in Linux. Function modifying the terminal settings to 
+ * disable input buffering. 
+ */
+int getch() {
+  tcgetattr(STDIN_FILENO, &oldt);           // save old settings
+  newt = oldt;
+  newt.c_lflag &= ~ICANON;                 // disable buffering  
+  newt.c_lflag &= ~ECHO; 
+  newt.c_lflag &= ~ISIG;   
+  newt.c_cc[VMIN] = 0;
+  newt.c_cc[VTIME] = 0;
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);  // apply new settings
+
+  int input = getchar();  // read character (non-blocking)
+
+  tcsetattr( STDIN_FILENO, TCSANOW, &oldt);  // restore old settings
+  return input;
+}
+
+/* Restores the original keyboard settings when the program exits, or else the terminal 
+ * will behave oddly. 
+ */
+void resetKeyboardSettings() {
+	tcsetattr(0, TCSANOW, &oldt);
+}
+
 /* This function continously updates the PointCloud structure as well as the octree based on the 
  * AR bundles that are being tracked by ar_tracker_alvar. The size of each individual point cloud 
- * being projected into the pose of the VelociRoACH is 0.04 x 0.1 m (approx. the size of the RoACH).
+ * being projected based on the pose of the VelociRoACH is 0.04 x 0.1 m (approx. the size of the RoACH).
  * The Octree is continuously being updated with new data points and is published for visualization 
  * and queries through rviz and other ROS nodes.
  */
-void publishPointCloud(ros::NodeHandle nh, ros::Publisher pub_cloud, ros::Publisher pub_octree_marker, PointCloud::Ptr cloud, OctreePC octree) {
+void publishPointCloud(ros::NodeHandle nh, ros::Publisher pub_cloud, PointCloud::Ptr cloud, OctreePC octree, std::string pcd_filename) {
   tf::TransformListener transform_listener;
   
   string ar_marker = "ar_marker_1"; 
 
   int idx_pts = 0;
   ros::Rate loop_rate(4);
+  int input = 'c';
+  cout << "Press 'q' to quit data collection and save point cloud.\n";
   while (nh.ok() && idx_pts < cloud->width*cloud->height) {
+	input = getch();   // check if user pressed q to quit data collection
+	if (input == 'q'){
+		break;
+	}
+
     tf::StampedTransform transform;
     try{
       ros::Time now = ros::Time::now();
@@ -72,54 +108,66 @@ void publishPointCloud(ros::NodeHandle nh, ros::Publisher pub_cloud, ros::Publis
 		}
 		x -= 0.02;
 	}
-	cout << "point cloud size: " << cloud->points.size() << ", idx_pts: " << idx_pts <<endl;
-	cout << "cloud->width*cloud->height = " << cloud->width*cloud->height << endl;
+	cout << "Point cloud size: " << cloud->points.size() << ", idx_pts: " << idx_pts <<endl;
+	cout << "Cloud->width * cloud->height = " << cloud->width*cloud->height << endl;
     cloud->header.stamp = ros::Time::now().toNSec();
 	pub_cloud.publish(cloud);
   }
 
-  // TODO: This is still a hack-y way to save the point cloud. Integrate asynchronous keyboard input command to stop data collection and write pc.
-  // if program was killed or point cloud filled filled 
-  if(idx_pts >= cloud->points.size()){	
+  // if program was terminated or point cloud filled, save out the point cloud and end program 
+  if(input == 'q' || idx_pts >= cloud->points.size()){	
   	cout << "Finished gathering and publishing point cloud.\n";
-  	string filename = "/home/humanoid/ros_workspace/src/coop_pcl/resources/test_pcd2.pcd";
-  	pcl::io::savePCDFileASCII(filename, *cloud);
-  	cout << "Saved " << idx_pts << " points out of total point cloud space of " << cloud->points.size() << " to " << filename << "\n";
-	exit(1);
+  	pcl::io::savePCDFileASCII(pcd_filename, *cloud);
+  	cout << "Saved " << idx_pts << " points out of total point cloud space of " << cloud->points.size() << " to " << pcd_filename << "\n";
+	resetKeyboardSettings();
+	cout << "Reset keyboard settings and shutting down.\n";
+	ros::shutdown();
   }
 }
 
+/* Initializes ROS node and runs main functionality
+ * NOTE: requires three arguments:
+ *		argv[1] = name of pcd file to save point cloud to
+ *		argv[2] = resolution of point cloud
+ *		argv[3] = width of point cloud (aka. total number of points allowed in cloud)
+ */
 int main(int argc, char** argv) {
 
   // Initialize ROS
   ros::init (argc, argv, "pub_pcl");
   ros::NodeHandle nh;
 
+  // Sanity check
+  if(argc != 4){
+	ROS_ERROR("Not enough arguments! Usage example: pcl_publisher test_pcd.pcd 0.01 15000");
+	ros::shutdown();
+  }
+
+  string pcd_filename = argv[1];
+  cout << "PCD Output Filename: " << pcd_filename << endl;
+
   // Create ROS publisher for the output point cloud
   ros::Publisher pub_cloud = nh.advertise<PointCloud>("points2", 1);
-
-  // Create ROS publisher for the output octree
-  //ros::Publisher pub_octree_marker_array = nh.advertise<visualization_msgs::Marker>("visualization_marker_array", 100);
-  ros::Publisher pub_octree_marker = nh.advertise<visualization_msgs::Marker>("visualization_marker", 100);
 
   // Create point cloud
   PointCloud::Ptr cloud(new PointCloud);
   cloud->header.frame_id = "usb_cam";
   cloud->height = 1;
-  cloud->width = 15000; // note: always make width the size of the total number of pts in ptcloud
-  //cloud->is_dense = false;
+  cloud->width = atoi(argv[3]); 
   cloud->points.resize(cloud->width * cloud->height);
+  cout << "Cloud Size: " << cloud->width << endl;
 
-  // resolution = size (side length) of a single voxel at the lowest level in the octree (lowest level->smallest voxel)
-  // considering the scale of the velociroach map (where the velociroach is 0.04 x 0.1 m) we want very fine resolution
-  float resolution = 0.001f; 
+  // Resolution = size (side length) of a single voxel at the lowest level in the octree (lowest level->smallest voxel)
+  // Considering the scale of the velociroach map (where the velociroach is 0.04 x 0.1 m) we want very fine resolution
+  float resolution = strtof(argv[2], NULL); 
+  cout << "Cloud Resolution: " << resolution << endl;
 
   // Create empty octree where octree = vector of point indicies with leaf nodes
   OctreePC octree(resolution); 
   octree.setInputCloud(cloud); // set octree's input cloud
 
   // Call point cloud publisher function
-  publishPointCloud(nh, pub_cloud, pub_octree_marker, cloud, octree);
+  publishPointCloud(nh, pub_cloud, cloud, octree, pcd_filename);
  
   ros::spin();
 }
