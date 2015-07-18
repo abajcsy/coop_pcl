@@ -1,17 +1,17 @@
 Cooperative Point Cloud Generation
 =============
 
-This project includes code and resources for cooperative point cloud generation with VelociRoACHes.
+This project includes code and resources for cooperative point cloud generation and terrain exploration with [VelociRoACHes].
 
-Code is written in C++ and Python.
+Code is written in C++ and Python and is using [ROS Indigo].
 
 
 Dependencies
 -------
-* ar_track_alvar[link_ar_track_alvar]
-* pcl[link_pcl]
-* perception_pcl[link_perception_pcl]
-* man_joy_override[link_man_joy_override]
+* [ar_track_alvar]
+* [pcl]
+* [perception_pcl]
+* [man_joy_override]
 
 What You Need
 -------
@@ -40,10 +40,13 @@ Arguments
 
 Extra Info
 -------
-Developed Summer 2015 as part of SUPERB-ITS REU Program in the Biomimetic Millisystems Lab, UC Berkeley. 
+Developed during Summer 2015 as part of SUPERB-ITS REU Program in the [Biomimetic Millisystems Lab], UC Berkeley. 
 
-[link_ar_track_alvar]: http://wiki.ros.org/ar_track_alvar
-[link_pcl]: http://wiki.ros.org/pcl
-[link_perception_pcl]: http://wiki.ros.org/perception_pcl
-[link_man_joy_override]: https://github.com/abuchan/man_joy_override
+[ar_track_alvar]: http://wiki.ros.org/ar_track_alvar
+[pcl]: http://wiki.ros.org/pcl
+[perception_pcl]: http://wiki.ros.org/perception_pcl
+[man_joy_override]: https://github.com/abuchan/man_joy_override
+[VelociRoACHes]: http://robotics.eecs.berkeley.edu/~ronf/Ambulation/
+[Biomimetic Millisystems Lab]: http://robotics.eecs.berkeley.edu/~ronf/Biomimetics.html
+[ROS Indigo]: http://wiki.ros.org/indigo
 
