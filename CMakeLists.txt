@@ -104,6 +104,11 @@ add_executable(pcl_publisher src/pcl_publisher.cpp)
 target_link_libraries(pcl_publisher ${catkin_LIBRARIES})
 add_executable(octree_visualizer src/octree_visualizer.cpp)
 target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
+add_executable(roach_controller src/roach_controller.cpp)
+target_link_libraries(roach_controller ${catkin_LIBRARIES})
+
+#add_executable(pcl_stats src/pcl_stats.cpp)
+#target_link_libraries(pcl_stats ${catkin_LIBRARIES})
 
 
 ## Declare a cpp library

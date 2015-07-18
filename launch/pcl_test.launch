@@ -37,18 +37,21 @@
 <node name="ar_track_alvar" pkg="ar_track_alvar" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg cam_image_topic) $(arg cam_info_topic) $(arg output_frame) $(arg bundle_files)" />
  
 <!-- GENERATE POINT CLOUD FROM AR TAGS -->
-<arg name="pcd_file" default="/home/humanoid/ros_workspace/src/coop_pcl/resources/test_pcd_file.pcd"/>
+<!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
+<arg name="pcd_file" default="NULL"/>			
 <arg name="cloud_width" default="15000" /> 
-<arg name="resolution" default="0.1" /> 
+<arg name="resolution" default="0.01" /> 
 <node name="pt_cloud" pkg="coop_pcl" type="pcl_publisher" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
 <!-- GET DATA RATE INFORMATION -->
 <!--<node name="data_rate" pkg="coop_pcl" type="DataRater.py" output="screen" /> -->
 
 <!-- CONTROL VELOCIROACH -->
-<node pkg="man_joy_override" name="man_joy" type="man_joy_override.py" />
 <node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> 
-<!--<node pkg="man_joy_override" name="roach_control" type="roach_control.py" output="screen" /> -->
-<node pkg="joy" name="joystick" type="joy_node"/>
+<!--<node pkg="man_joy_override" name="man_joy" type="man_joy_override.py" /> -->
+<!--<node pkg="joy" name="joystick" type="joy_node"/>-->
+
+<!-- RECORD A ROSBAG -->
+<!--<node name="record" pkg="rosbag" type="record" args="-a"/>-->
 
 </launch>
