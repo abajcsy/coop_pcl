@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
+#include <std_msgs/String.h>
 #include <tf/transform_listener.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -16,8 +17,11 @@
 #include <termios.h>
 #include <time.h>   
 
+#include <coop_pcl/exploration_info.h>
+
+#define PI 3.14159265
+
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
-typedef pcl::octree::OctreePointCloud<pcl::PointXYZ> OctreePC;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
 
 using namespace std;
@@ -114,4 +118,8 @@ int main(int argc, char** argv){
 
 	RoachController controller(nh);
 	controller.randomWalk();
+
+	//ros::Subscriber sub = nh_.subscribe("navig", 1000, greedyWalk);		// I DON'T KNOW IF THIS IS RIGHT: also greedyWalk is not implemented
+
+	ros::spin();
 }

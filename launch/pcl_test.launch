@@ -40,18 +40,19 @@
 <!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
 <arg name="pcd_file" default="NULL"/>			
 <arg name="cloud_width" default="15000" /> 
-<arg name="resolution" default="0.01" /> 
+<arg name="resolution" default="0.005" /> 
 <node name="pt_cloud" pkg="coop_pcl" type="pcl_publisher" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
-<!-- GET DATA RATE INFORMATION -->
-<!--<node name="data_rate" pkg="coop_pcl" type="DataRater.py" output="screen" /> -->
+<!-- PUBLISH TWIST MESSAGE FOR RANDOM WALK -->
+<node name="controller" pkg="coop_pcl" type="roach_controller" output="screen" /> 
 
 <!-- CONTROL VELOCIROACH -->
 <node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> 
-<!--<node pkg="man_joy_override" name="man_joy" type="man_joy_override.py" /> -->
-<!--<node pkg="joy" name="joystick" type="joy_node"/>-->
 
-<!-- RECORD A ROSBAG -->
-<!--<node name="record" pkg="rosbag" type="record" args="-a"/>-->
+<!-- GET DATA RATE INFORMATION 
+<node name="data_rate" pkg="coop_pcl" type="DataRater.py" output="screen" /> -->
+
+<!-- RECORD A ROSBAG 
+<node name="record" pkg="rosbag" type="record" args="-a"/> -->
 
 </launch>

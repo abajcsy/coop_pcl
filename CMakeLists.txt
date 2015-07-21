@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   pcl_ros 
   pcl_conversions
+  message_generation
 )
 
 
@@ -47,11 +48,10 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+ add_message_files(
+   FILES
+   exploration_info.msg
+ )
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -68,10 +68,11 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+   geometry_msgs
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -85,7 +86,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES coop_pcl
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS roscpp rospy std_msgs message_runtime
 #  DEPENDS system_lib
 )
 
@@ -107,9 +108,10 @@ target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
 add_executable(roach_controller src/roach_controller.cpp)
 target_link_libraries(roach_controller ${catkin_LIBRARIES})
 
+add_dependencies(pcl_publisher coop_pcl_generate_messages_cpp)
+
 #add_executable(pcl_stats src/pcl_stats.cpp)
 #target_link_libraries(pcl_stats ${catkin_LIBRARIES})
-
 
 ## Declare a cpp library
 # add_library(coop_pcl

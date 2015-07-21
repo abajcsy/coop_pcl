@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <termios.h>
 
+#include <coop_pcl/exploration_info.h>
+
 using namespace std;
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
@@ -27,6 +29,7 @@ class CloudGenerator {
 		ros::NodeHandle nh_;
 		ros::Publisher cloud_pub_;
 		ros::Publisher cmd_vel_pub_;
+		ros::Publisher explore_info_;
 		PointCloud::Ptr cloud_;
 		OctreeSearch *octreeSearch_;
 
@@ -64,15 +67,17 @@ class CloudGenerator {
 			tcsetattr(0, TCSANOW, &oldt);
 		}
 
+
 	public:
 		/* Resolution = size (side length) of a single voxel at the lowest level in the octree (lowest level->smallest voxel)
 	     * Considering the scale of the velociroach map (where the velociroach is 0.04 x 0.1 m) we want very fine resolution
 		 */
 		CloudGenerator(ros::NodeHandle &nh, int width, float resolution){
 			nh_ = nh;
-			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);	// TODO: only works for 1 robot
 			cloud_pub_ = nh_.advertise<PointCloud>("points2", 1);
-	
+			//explore_info_ = nh_.advertise<coop_pcl::exploration_info>("navig", 1);
+			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);    // TODO: change robot1 to robotN where N is the Nth robot that we are controlling	
+			
 			PointCloud::Ptr cloud(new PointCloud); 	
 			cloud_ = cloud;																// TODO: this isn't good practice, but can't get it to work otherwise...
 			cloud_->header.frame_id = "usb_cam";
@@ -82,6 +87,20 @@ class CloudGenerator {
 
 			octreeSearch_ = new OctreeSearch(resolution);
 			octreeSearch_->setInputCloud(cloud_);
+		}
+
+		/* Returns vector of indices of all points in point cloud that are within radius of searchPoint.
+		 */
+		vector<int> pointIdxRadiusSearch(pcl::PointXYZ searchPoint, float radius){
+		  vector<int> pointIdxRadiusSearch;
+		  vector<float> pointRadiusSquaredDistance;
+
+		  cout << "Neighbors within radius search at (" << searchPoint.x << " " << searchPoint.y  << " " << searchPoint.z << ") with radius=" << radius << endl;
+
+		  if (octreeSearch_->radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
+			cout << "Found points within " << radius << "of search point." << endl;
+		  }
+		  return pointIdxRadiusSearch;
 		}
 
 		/* Runs point cloud publishing and VelociRoACH controls.
@@ -98,6 +117,7 @@ class CloudGenerator {
 
 			int input = 'c';
 			int num_pts = 0;
+			int maxCloudSize = cloud_->width*cloud_->height;
 
 			// we will be sending commands of type "Twist"
 			geometry_msgs::Twist base_cmd;
@@ -105,19 +125,16 @@ class CloudGenerator {
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
 			cout << "Robot is starting random walk...\n";
 
-			while (nh_.ok() && num_pts < cloud_->width*cloud_->height && input != 'q') {
+			while (nh_.ok() && num_pts < maxCloudSize && input != 'q') {
 				input = getch();   // check if user pressed q to quit data collection
 				if (input == 'q'){
 					break;
 				}
-	
-
-				// setup for publishing point cloud
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
 				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(3.0));
-				  cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
+				  //cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
 				  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
@@ -125,6 +142,21 @@ class CloudGenerator {
 				  ros::Duration(1.0).sleep();
 				}
 
+				/****************** MOVE VELOCIROACH *******************
+				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
+
+				double randLinX = randDouble(0.0, 1.0); srand(time(NULL));
+				double randAngle = randDouble(-1.0, 1.0); srand(time(NULL));
+
+				cout << "randLinX: " << randLinX << ", randAngle: " << randAngle << endl;
+
+				base_cmd.linear.x = randLinX;   // move forward
+				base_cmd.angular.z = randAngle;   // move left or right
+		        cmd_vel_pub_.publish(base_cmd);	
+				/*********************************************************/
+
+
+				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
 				double x = 0.05;
 				while(x >= -0.05 ){
 					double y = -0.02;
@@ -143,8 +175,9 @@ class CloudGenerator {
 						cloud_->points[num_pts].y = tf_y;
 						cloud_->points[num_pts].z = tf_z;
 
-						// update octree cloud pointer
+						// update octree cloud pointer and add points to octree
 						octreeSearch_->setInputCloud(cloud_);
+					 	octreeSearch_->addPointsFromInputCloud();
 
 						//cout << "Added (" << tf_x << "," << tf_y << "," << tf_z << ")\n";
 						num_pts+=1;
@@ -155,7 +188,9 @@ class CloudGenerator {
 				cloud_->header.stamp = ros::Time::now().toNSec();
 				cloud_pub_.publish(cloud_);
 				cout << "Point cloud size: " << cloud_->points.size() << ", num_pts: " << num_pts <<endl;
-				cout << "Cloud->width * cloud->height = " << cloud_->width*cloud_->height << endl;
+				cout << "Cloud->width * cloud->height = " << maxCloudSize << endl;
+				/*********************************************************/
+				
 			}
 
 			// if program was terminated or point cloud filled, save out the point cloud and end program 
@@ -169,9 +204,9 @@ class CloudGenerator {
 					cout << "User specified NOT to save point cloud.\n";
 				}
 
-				cout << "Stopping robot...\n";
 				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
 				cmd_vel_pub_.publish(base_cmd);
+				cout << "Shut down robot.\n";
 
 				resetKeyboardSettings();
 				cout << "Reset keyboard settings and shutting down.\n";
@@ -179,8 +214,6 @@ class CloudGenerator {
 			}
 		}
 };
-
-
 
 
 /* Initializes ROS node and runs main functionality
