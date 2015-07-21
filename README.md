@@ -8,16 +8,25 @@ Code is written in C++ and Python and is using [ROS Indigo].
 
 Dependencies
 -------
+If you're using catkin_make, navigate to the /src directory in your ros workspace and type 'git clone' followed by the http://... website to each of the following github repositories. Then, navigate up one folder level to your ros workspace and type 'catkin_make'.
 * [ar_track_alvar]
 * [pcl]
 * [perception_pcl]
 * [man_joy_override]
 
+Example:
+```bash
+cd ~/ros_workspace/src
+git clone https://github.com/sniekum/ar_track_alvar.git
+cd ..
+catkin_make
+```
+
 What You Need
 -------
 * Single Microsoft Lifecam 3000
 * 1+ VelociRoACH controlled with a Logitech Rumble Gamepad F510 and XBee radio module
-* 3.5x3.5x3.5 cm AR tag cube generated with through [ar_track_alvar] (used for tracking the VelociRoACHes)
+* 3.5 x 3.5 x 3.5 cm AR tag cube generated with through [ar_track_alvar] (used for tracking the VelociRoACHes)
 
 Notes
 -------
@@ -26,7 +35,7 @@ Notes
 ```bash
 rosrun pcl_ros pcd_to_pointcloud test_pcd.pcd 0.1 _frame_id:=/map 
 ```
-* To run the pcl_publisher:
+* To run the pcl_publisher and roach_control nodes:
 ```bash
 roslaunch coop_pcl pcl_test.launch
 ```
