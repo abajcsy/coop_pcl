@@ -80,7 +80,7 @@ class RoachController {
 			// we will be sending commands of type "Twist"
 			geometry_msgs::Twist base_cmd;
 
-			cout << "Press 'q' to quit moving the robot.\n";
+			//cout << "Press 'q' to quit moving the robot.\n";
 			int input = 'c';
 		    while(nh_.ok() && input != 'q'){
 				input = getch();   // check if user pressed q to quit
@@ -89,10 +89,10 @@ class RoachController {
 				}
 				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
 
-				double randLinX = randDouble(0.0, 1.0); srand(time(NULL));
-				double randAngle = randDouble(-1.0, 1.0); srand(time(NULL));
+				double randLinX = randDouble(-0.6, 0.6); srand(time(NULL));
+				double randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
 
-				cout << "randLinX: " << randLinX << ", randAngle: " << randAngle << endl;
+				//cout << "randLinX: " << randLinX << ", randAngle: " << randAngle << endl;
 
 				base_cmd.linear.x = randLinX;   // move forward
 				base_cmd.angular.z = randAngle;   // move left or right

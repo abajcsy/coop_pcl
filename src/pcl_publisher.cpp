@@ -120,10 +120,9 @@ class CloudGenerator {
 			int maxCloudSize = cloud_->width*cloud_->height;
 
 			// we will be sending commands of type "Twist"
-			geometry_msgs::Twist base_cmd;
+			// geometry_msgs::Twist base_cmd;
 
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
-			cout << "Robot is starting random walk...\n";
 
 			while (nh_.ok() && num_pts < maxCloudSize && input != 'q') {
 				input = getch();   // check if user pressed q to quit data collection
@@ -133,8 +132,8 @@ class CloudGenerator {
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(3.0));
-				  //cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
+				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+				  cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
 				  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
@@ -203,11 +202,6 @@ class CloudGenerator {
 				}else{
 					cout << "User specified NOT to save point cloud.\n";
 				}
-
-				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
-				cmd_vel_pub_.publish(base_cmd);
-				cout << "Shut down robot.\n";
-
 				resetKeyboardSettings();
 				cout << "Reset keyboard settings and shutting down.\n";
 				ros::shutdown();

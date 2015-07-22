@@ -1,0 +1,34 @@
+<launch>
+
+<!-- SET UP STATIC TRANSFORMS -->
+<arg name="pi/2" value="1.5707963267948966" />
+<arg name="optical_rotate" value="0 0 0 -$(arg pi/2) 0 -$(arg pi/2)" />
+<node pkg="tf" type="static_transform_publisher" name="map" args="$(arg optical_rotate) map usb_cam 100" /> 
+
+<!-- PLAY ROSBAG FILE -->
+<param name="use_sim_time" value="false" />
+<arg name="path" default="/home/humanoid/ros_workspace/src/coop_pcl/resources/bag/" />
+<arg name="bag_file" default="incline_test.bag" />
+<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg path)$(arg bag_file)"/>
+
+<!-- TRACK AR TAGS -->
+<arg name="marker_size" default="3.5" /> 
+<arg name="max_new_marker_error" default="0.08" />
+<arg name="max_track_error" default="0.2" />
+
+<arg name="cam_image_topic" default="/usb_cam/image_raw" />
+<arg name="cam_info_topic" default="/usb_cam/camera_info" />
+
+<arg name="output_frame" default="/usb_cam" />
+<arg name="bundle_files" default="$(find coop_pcl)/launch/ar_cube_bundle.xml $(find coop_pcl)/launch/ar_cube_bundle2.xml" />
+
+<!-- NOTE: used to be type="individualMarkersNoKinect", but want AR cube on VelociRoACH to be bundle -->
+<node name="ar_track_alvar" pkg="ar_track_alvar" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg cam_image_topic) $(arg cam_info_topic) $(arg output_frame) $(arg bundle_files)" />
+ 
+<!-- GENERATE POINT CLOUD FROM AR TAGS -->
+<arg name="pcd_file" default="/home/humanoid/ros_workspace/src/coop_pcl/resources/pcd/test_pcd_file.pcd"/>
+<arg name="cloud_width" default="15000" /> 
+<arg name="resolution" default="0.1" /> 
+<node name="pt_cloud" pkg="coop_pcl" type="pcl_publisher" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
+
+</launch>
