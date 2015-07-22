@@ -7,12 +7,16 @@
 
 #include <tf/transform_listener.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Point.h>
+#include <geometry_msgs/Quaternion.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <iostream>
 #include <string>
 
 #include <stdio.h>
 #include <termios.h>
+#include <math.h> 
 
 #include <coop_pcl/exploration_info.h>
 
@@ -30,8 +34,11 @@ class CloudGenerator {
 		ros::Publisher cloud_pub_;
 		ros::Publisher cmd_vel_pub_;
 		ros::Publisher explore_info_;
+		ros::Publisher location_pub_;
 		PointCloud::Ptr cloud_;
 		OctreeSearch *octreeSearch_;
+
+		//ros::Subscriber goal_sub_;	
 
 		/* Returns a random double between fMin and fMax.
 		 */
@@ -67,8 +74,8 @@ class CloudGenerator {
 			tcsetattr(0, TCSANOW, &oldt);
 		}
 
-
 	public:
+
 		/* Resolution = size (side length) of a single voxel at the lowest level in the octree (lowest level->smallest voxel)
 	     * Considering the scale of the velociroach map (where the velociroach is 0.04 x 0.1 m) we want very fine resolution
 		 */
@@ -87,6 +94,14 @@ class CloudGenerator {
 
 			octreeSearch_ = new OctreeSearch(resolution);
 			octreeSearch_->setInputCloud(cloud_);
+
+			location_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("location_info", 1);
+
+			/*cout << "Looking up goal from rviz..." << endl;
+			ros::topic::waitForMessage<geometry_msgs::PoseStamped>("move_base_simple/goal", ros::Duration(20.0));
+			cout << "Found goal from rviz..." << endl;
+			goal_sub_ = nh_.subscribe("move_base_simple/goal", 1000, &CloudGenerator::callback, this);
+			cout << "Goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";*/
 		}
 
 		/* Returns vector of indices of all points in point cloud that are within radius of searchPoint.
@@ -103,6 +118,12 @@ class CloudGenerator {
 		  return pointIdxRadiusSearch;
 		}
 
+		/*void callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
+			cout << "IN CALLBACK: Goal: (" << msg->pose.position.x << ", " << msg->pose.position.y << ", " << msg->pose.position.z << ")\n";
+			goal_pt_ = msg->pose.position;
+			goal_orientation_ = msg->pose.orientation;
+		}*/		
+
 		/* Runs point cloud publishing and VelociRoACH controls.
 		 * This function continously updates the PointCloud structure as well as the octree based on the 
 		 * AR bundles that are being tracked by ar_tracker_alvar. The size of each individual point cloud 
@@ -111,6 +132,7 @@ class CloudGenerator {
 		 * and queries through rviz and other ROS nodes.
 		 */
 		void run(std::string pcd_filename){
+
 			tf::TransformListener transform_listener;
 			string ar_marker = "ar_marker_1"; 
 			ros::Rate loop_rate(4);
@@ -120,10 +142,10 @@ class CloudGenerator {
 			int maxCloudSize = cloud_->width*cloud_->height;
 
 			// we will be sending commands of type "Twist"
-			// geometry_msgs::Twist base_cmd;
+			geometry_msgs::Twist base_cmd;
 
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
-
+		
 			while (nh_.ok() && num_pts < maxCloudSize && input != 'q') {
 				input = getch();   // check if user pressed q to quit data collection
 				if (input == 'q'){
@@ -133,7 +155,7 @@ class CloudGenerator {
 				try{
 				  ros::Time now = ros::Time::now();
 				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
-				  cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
+				  //cout << "Looking up tf from usb_cam to " << ar_marker << "...\n";
 				  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
@@ -142,15 +164,28 @@ class CloudGenerator {
 				}
 
 				/****************** MOVE VELOCIROACH *******************
-				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
+				tf::StampedTransform path_transform;
+				try{
+				  ros::Time now = ros::Time::now();
+				  transform_listener.waitForTransform(ar_marker, "ar_marker_0", now, ros::Duration(5.0));
+				  cout << "Looking up tf from ar_marker_1 to ar_marker_0 ...\n";
+				  transform_listener.lookupTransform(ar_marker, "ar_marker_0", ros::Time(0), path_transform);
+				}
+				catch (tf::TransformException ex){
+				  ROS_ERROR("%s",ex.what());
+				  ros::Duration(1.0).sleep();
+				}
+		
+				double xLoc = path_transform.getOrigin().x();
+				double yLoc = path_transform.getOrigin().y();
+				
+				double angular = -0.5*atan2(yLoc,xLoc);
+				double linear = sqrt(pow(xLoc,2)+pow(yLoc,2));
 
-				double randLinX = randDouble(0.0, 1.0); srand(time(NULL));
-				double randAngle = randDouble(-1.0, 1.0); srand(time(NULL));
+				cout << "linear vel: " << linear << ", angular vel: " << angular << endl;
 
-				cout << "randLinX: " << randLinX << ", randAngle: " << randAngle << endl;
-
-				base_cmd.linear.x = randLinX;   // move forward
-				base_cmd.angular.z = randAngle;   // move left or right
+				base_cmd.linear.x = linear;   // move forward
+				base_cmd.angular.z = angular;   // move left or right
 		        cmd_vel_pub_.publish(base_cmd);	
 				/*********************************************************/
 
@@ -178,6 +213,24 @@ class CloudGenerator {
 						octreeSearch_->setInputCloud(cloud_);
 					 	octreeSearch_->addPointsFromInputCloud();
 
+						// send roach_controller the current location pose info
+						geometry_msgs::PoseStamped location;
+						location.header.frame_id = "usb_cam";
+						location.header.stamp = ros::Time::now();
+						location.header.seq = num_pts;
+
+						location.pose.position.x = transform.getOrigin().x();
+						location.pose.position.y = transform.getOrigin().y();
+						location.pose.position.z = transform.getOrigin().z();
+
+						location.pose.orientation.x = 0;
+						location.pose.orientation.y = 0;
+						location.pose.orientation.z = 0;
+						location.pose.orientation.w = 1;
+						//cout << "location: x: " << location.pose.position.x << ", y: " << location.pose.position.y << ", z: " << location.pose.position.z << endl;
+						//cout << "Publishing current location (for roach_controller)...\n";
+						location_pub_.publish(location);
+
 						//cout << "Added (" << tf_x << "," << tf_y << "," << tf_z << ")\n";
 						num_pts+=1;
 						y += 0.02;
@@ -186,11 +239,13 @@ class CloudGenerator {
 				}
 				cloud_->header.stamp = ros::Time::now().toNSec();
 				cloud_pub_.publish(cloud_);
-				cout << "Point cloud size: " << cloud_->points.size() << ", num_pts: " << num_pts <<endl;
-				cout << "Cloud->width * cloud->height = " << maxCloudSize << endl;
+				//cout << "Point cloud size: " << cloud_->points.size() << ", num_pts: " << num_pts <<endl;
+				//cout << "Cloud->width * cloud->height = " << maxCloudSize << endl;
 				/*********************************************************/
 				
 			}
+
+			ros::spin();
 
 			// if program was terminated or point cloud filled, save out the point cloud and end program 
 			if(input == 'q' || num_pts >= cloud_->points.size()) {	
@@ -207,6 +262,8 @@ class CloudGenerator {
 				ros::shutdown();
 			}
 		}
+
+		
 };
 
 
@@ -239,5 +296,4 @@ int main(int argc, char** argv) {
   CloudGenerator driver(nh, width, resolution);
   driver.run(pcd_filename);
  
-  ros::spin();
 }
