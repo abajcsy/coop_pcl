@@ -84,7 +84,8 @@ class CloudGenerator {
 			cloud_pub_ = nh_.advertise<PointCloud>("points2", 1);
 			//explore_info_ = nh_.advertise<coop_pcl::exploration_info>("navig", 1);
 			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);    // TODO: change robot1 to robotN where N is the Nth robot that we are controlling	
-			
+			location_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("location_info", 1);
+
 			PointCloud::Ptr cloud(new PointCloud); 	
 			cloud_ = cloud;																// TODO: this isn't good practice, but can't get it to work otherwise...
 			cloud_->header.frame_id = "usb_cam";
@@ -94,14 +95,6 @@ class CloudGenerator {
 
 			octreeSearch_ = new OctreeSearch(resolution);
 			octreeSearch_->setInputCloud(cloud_);
-
-			location_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("location_info", 1);
-
-			/*cout << "Looking up goal from rviz..." << endl;
-			ros::topic::waitForMessage<geometry_msgs::PoseStamped>("move_base_simple/goal", ros::Duration(20.0));
-			cout << "Found goal from rviz..." << endl;
-			goal_sub_ = nh_.subscribe("move_base_simple/goal", 1000, &CloudGenerator::callback, this);
-			cout << "Goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";*/
 		}
 
 		/* Returns vector of indices of all points in point cloud that are within radius of searchPoint.
@@ -141,9 +134,6 @@ class CloudGenerator {
 			int num_pts = 0;
 			int maxCloudSize = cloud_->width*cloud_->height;
 
-			// we will be sending commands of type "Twist"
-			geometry_msgs::Twist base_cmd;
-
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
 		
 			while (nh_.ok() && num_pts < maxCloudSize && input != 'q') {
@@ -151,6 +141,7 @@ class CloudGenerator {
 				if (input == 'q'){
 					break;
 				}
+
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
@@ -162,32 +153,6 @@ class CloudGenerator {
 				  ROS_ERROR("%s",ex.what());
 				  ros::Duration(1.0).sleep();
 				}
-
-				/****************** MOVE VELOCIROACH *******************
-				tf::StampedTransform path_transform;
-				try{
-				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform(ar_marker, "ar_marker_0", now, ros::Duration(5.0));
-				  cout << "Looking up tf from ar_marker_1 to ar_marker_0 ...\n";
-				  transform_listener.lookupTransform(ar_marker, "ar_marker_0", ros::Time(0), path_transform);
-				}
-				catch (tf::TransformException ex){
-				  ROS_ERROR("%s",ex.what());
-				  ros::Duration(1.0).sleep();
-				}
-		
-				double xLoc = path_transform.getOrigin().x();
-				double yLoc = path_transform.getOrigin().y();
-				
-				double angular = -0.5*atan2(yLoc,xLoc);
-				double linear = sqrt(pow(xLoc,2)+pow(yLoc,2));
-
-				cout << "linear vel: " << linear << ", angular vel: " << angular << endl;
-
-				base_cmd.linear.x = linear;   // move forward
-				base_cmd.angular.z = angular;   // move left or right
-		        cmd_vel_pub_.publish(base_cmd);	
-				/*********************************************************/
 
 
 				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/

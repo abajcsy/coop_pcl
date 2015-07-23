@@ -22,7 +22,12 @@
 
 #include <coop_pcl/exploration_info.h>
 
+#include <stack>          // std::stack
+#include <vector>         // std::vector
+#include <deque>          // std::deque
+
 #define PI 3.14159265
+#define EPSILON 0.005
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
@@ -39,6 +44,10 @@ class RoachController {
 
 		geometry_msgs::Point curr_pt_;
 		geometry_msgs::Quaternion curr_orientation_;
+
+		geometry_msgs::Point prev_pt_;
+
+		stack<vector<double> > prev_commands;    // empty stack stores a sequence of the previous linear and angular velocities
 		
 		double randDouble(double fMin, double fMax) {
 			double f = (double)rand() / RAND_MAX;
@@ -48,15 +57,31 @@ class RoachController {
 	public:
 		
 		void callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
-			cout << "IN CALLBACK: Curr Loc: (" << msg->pose.position.x << ", " << msg->pose.position.y << ", " << msg->pose.position.z << ")\n";
+			/*cout << "------------------------------------" << endl;
+			cout << "New Loc: (" << msg->pose.position.x << ", " << msg->pose.position.y << ", " << msg->pose.position.z << ")\n";
+			cout << "Prev Loc: (" << prev_pt_.x << ", " << prev_pt_.y << ", " << prev_pt_.z << ")\n";
+			cout << "Curr Loc: (" << curr_pt_.x << ", " << curr_pt_.y << ", " << curr_pt_.z << ")\n";*/
+
+			// deep copy the current point to previous point
+			prev_pt_.x = curr_pt_.x; 
+			prev_pt_.y = curr_pt_.y; 
+			prev_pt_.z = curr_pt_.z; 
+			// update new point to be current point
 			curr_pt_ = msg->pose.position;
 			curr_orientation_ = msg->pose.orientation;
+
+			/*cout << "UPDATED Prev Loc: (" << prev_pt_.x << ", " << prev_pt_.y << ", " << prev_pt_.z << ")\n";
+			cout << "UPDATED Curr Loc: (" << curr_pt_.x << ", " << curr_pt_.y << ", " << curr_pt_.z << ")\n";
+			cout << "------------------------------------" << endl;*/
 		}	
 
-		RoachController(ros::NodeHandle &nh){
+		RoachController(){
+			ros::NodeHandle nh;
 			nh_ = nh;
+
 			// TODO: change robot1 to robotN where N is the Nth robot that we are controlling
 			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);
+			location_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("location_info", 1000, &RoachController::callback, this);	
 		}
 
 		/* Implements a non-blocking getchar() in Linux. Function modifying the terminal settings to 
@@ -87,7 +112,7 @@ class RoachController {
 
 		/* Moves robot with randomly generated linear and angular velocity 
 		 */
-		void randomWalk(){
+		void randomWalk() {
 			cout << "Robot is starting random walk...\n";
 			
 			// we will be sending commands of type "Twist"
@@ -95,6 +120,8 @@ class RoachController {
 
 			//cout << "Press 'q' to quit moving the robot.\n";
 			int input = 'c';
+
+			ros::Rate loop_rate(4);
 		    while(nh_.ok() && input != 'q'){
 				input = getch();   // check if user pressed q to quit
 				if (input == 'q'){
@@ -110,6 +137,8 @@ class RoachController {
 				base_cmd.linear.x = randLinX;   // move forward
 				base_cmd.angular.z = randAngle;   // move left or right
 		        cmd_vel_pub_.publish(base_cmd);
+
+				ros::spinOnce();
 			}
 
 			// if got command to quit
@@ -122,34 +151,111 @@ class RoachController {
 			}
 		}
 
-		/* Moves robot with randomly generated linear and angular velocity 
+		/* Moves robot with randomly generated linear and angular velocity until the
+		 * robot gets stuck. If it gets stuck, then it backtracks and continues randomly exploring.
+		 * Below, there's pseudocode for the backtracking algorithm:
+		 *
+		 * if past N points were NOT the same 
+		 *		backtracking = false;
+		 * else if past N points WERE the same 
+		 *		backtracking = true;
+		 *		num_same_pts = 0;
+		 *
+		 * if BACKTRACKING
+		 *		if num_times_backtracked < max_num && !command_stack.empty()
+		 *			pop the next command from command stack
+		 *			reverse the command
+		 *			num_times_backtracked++
+		 *		else
+		 *			backtracking = false
+		 *			num_times_backtracked = 0
+		 * else if NOT BACKTRACKING
+		 *		if curr_point == prev_point
+		 *			num_same_pts++;
+		 *		randomly generate command
+		 * 		push command onto command stack (only if is not already on stack)
 		 */
-		/*void randomSmartWalk(){
-			cout << "Robot is starting random walk...\n";
+		void randomSmartWalk(){
+			cout << "Robot is starting random smart walk...\n";
 			
-			location_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("location_info", 1000, &RoachController::callback, this);	
-
-			// we will be sending commands of type "Twist"
 			geometry_msgs::Twist base_cmd;
 
-			//cout << "Press 'q' to quit moving the robot.\n";
+			cout << "Press 'q' to quit moving the robot.\n";
 			int input = 'c';
+			double randLinear = 0; 
+			double randAngle = 0;
+
+			bool backtracking = false;
+			int num_same_pts = 0; int max_same_pts = 20;
+			int backtrack_counter = 0; int max_backtrack = 4;
+
+			ros::Rate loop_rate(2);
 		    while(nh_.ok() && input != 'q'){
-				input = getch();   // check if user pressed q to quit
+				input = getch();   
+				// check if user pressed q to quit
 				if (input == 'q'){
 					break;
 				}
-				cout << "Curr Loc: (" << curr_pt_.x << ", " << curr_pt_.y << ", " << curr_pt_.z << ")\n";
-				base_cmd.linear.x = base_cmd.linear.y = base_cmd.angular.z = 0;
+				
+				// check if seen too many of the same point (ie. robot is stuck and need to backtrack)
+				if(num_same_pts < max_same_pts){
+					backtracking = false;
+				}else{
+					backtracking = true;
+					num_same_pts = 0;
+				}
+		
+				if(backtracking){
+					// if we still need to backtrack and we have more commands in stack to backtrack with
+					if(backtrack_counter < max_backtrack && !prev_commands.empty()){
+						vector<double> prev_command = prev_commands.top();
+						prev_commands.pop();
+						randLinear = -prev_command[0];
+						randAngle = -prev_command[1];
+						cout << "BACKTRACKING #" << backtrack_counter << " --> linear: " << randLinear << ", angle: " << randAngle << endl;		
+						backtrack_counter++;
+					}else{ // done backtracking, reset counter
+						backtracking = false;
+						backtrack_counter = 0;
+					}
+				}else{
+					// if the two points are the same
+					if(abs(curr_pt_.x - prev_pt_.x) < EPSILON && abs(curr_pt_.y - prev_pt_.y) < EPSILON && abs(curr_pt_.z - prev_pt_.z) < EPSILON) { 
+						num_same_pts++;
+						// get previous command if exists
+						if(!prev_commands.empty()){
+							vector<double> prev_command = prev_commands.top();
+							randLinear = prev_command[0];
+							randAngle = prev_command[1];
+							cout << "RANDOM WALK (prev command, same pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
+						}else{
+							randLinear = randDouble(-0.6, 0.6); srand(time(NULL));
+							randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
+							// push new command onto stack
+							vector<double> cmd;
+							cmd.push_back(randLinear);
+							cmd.push_back(randAngle);
+							prev_commands.push(cmd);
+							cout << "RANDOM WALK (NEW command, same pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
+						}						
+					}else{
+						randLinear = randDouble(-0.6, 0.6); srand(time(NULL));
+						randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
+						// push new command onto stack
+						vector<double> cmd;
+						cmd.push_back(randLinear);
+						cmd.push_back(randAngle);
+						prev_commands.push(cmd);
+						cout << "RANDOM WALK (NEW command, new pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
+					}	
+				}
 
-				double randLinX = randDouble(-0.6, 0.6); srand(time(NULL));
-				double randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
+				base_cmd.linear.x = randLinear;   
+				base_cmd.angular.z = randAngle;   
+			    cmd_vel_pub_.publish(base_cmd);
 
-				//cout << "randLinX: " << randLinX << ", randAngle: " << randAngle << endl;
-
-				base_cmd.linear.x = randLinX;   // move forward
-				base_cmd.angular.z = randAngle;   // move left or right
-		        cmd_vel_pub_.publish(base_cmd);
+				ros::spinOnce();
+				loop_rate.sleep();
 			}
 
 			// if got command to quit
@@ -160,7 +266,8 @@ class RoachController {
 				cout << "Reset keyboard settings and shutting down.\n";
 				ros::shutdown();
 			}
-		}*/
+		}
+	
 
 		/* Moves robot with randomly generated linear and angular velocity 
 		 */
@@ -206,6 +313,8 @@ class RoachController {
 				base_cmd.linear.x = linear;   // move forward
 				base_cmd.angular.z = angular;   // move left or right
 		        cmd_vel_pub_.publish(base_cmd);	
+
+				ros::spinOnce();
 			}
 
 			// if got command to quit
@@ -220,13 +329,11 @@ class RoachController {
 };
 
 int main(int argc, char** argv){
-
 	// Initialize ROS
 	ros::init (argc, argv, "roach_control");
-	ros::NodeHandle nh;
 
-	RoachController controller(nh);
-	controller.walkToARGoal();
-
-	ros::spin();
+	RoachController controller;
+	controller.randomSmartWalk();
+	//controller.walkToARGoal();
+	//controller.randomWalk();
 }

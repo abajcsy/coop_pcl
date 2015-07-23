@@ -108,6 +108,9 @@ target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
 add_executable(roach_controller src/roach_controller.cpp)
 target_link_libraries(roach_controller ${catkin_LIBRARIES})
 
+add_executable(planar_segmentation src/planar_segmentation.cpp)
+target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
+
 add_dependencies(pcl_publisher coop_pcl_generate_messages_cpp)
 
 #add_executable(pcl_stats src/pcl_stats.cpp)
