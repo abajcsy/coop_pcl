@@ -1,7 +1,6 @@
 <launch>
 
 <!-- SET UP STATIC TRANSFORMS -->
-<arg name="pi/2" value="1.5707963267948966" />
 <arg name="optical_rotate" value="0 0 0.35 0 0 -2" />
 <node pkg="tf" type="static_transform_publisher" name="map" args="$(arg optical_rotate) map usb_cam 100" /> 
 

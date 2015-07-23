@@ -89,9 +89,9 @@ class CloudGenerator {
 			PointCloud::Ptr cloud(new PointCloud); 	
 			cloud_ = cloud;																// TODO: this isn't good practice, but can't get it to work otherwise...
 			cloud_->header.frame_id = "usb_cam";
-		    cloud_->height = 1;
-		    cloud_->width = width; 
-		    cloud_->points.resize(cloud_->width * cloud_->height);
+			cloud_->height = 1;
+			cloud_->width = width; 
+			cloud_->points.resize(cloud_->width * cloud_->height);
 
 			octreeSearch_ = new OctreeSearch(resolution);
 			octreeSearch_->setInputCloud(cloud_);
@@ -100,22 +100,16 @@ class CloudGenerator {
 		/* Returns vector of indices of all points in point cloud that are within radius of searchPoint.
 		 */
 		vector<int> pointIdxRadiusSearch(pcl::PointXYZ searchPoint, float radius){
-		  vector<int> pointIdxRadiusSearch;
-		  vector<float> pointRadiusSquaredDistance;
+			vector<int> pointIdxRadiusSearch;
+			vector<float> pointRadiusSquaredDistance;
 
-		  cout << "Neighbors within radius search at (" << searchPoint.x << " " << searchPoint.y  << " " << searchPoint.z << ") with radius=" << radius << endl;
+			cout << "Neighbors within radius search at (" << searchPoint.x << " " << searchPoint.y  << " " << searchPoint.z << ") with radius=" << radius << endl;
 
-		  if (octreeSearch_->radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
-			cout << "Found points within " << radius << "of search point." << endl;
-		  }
-		  return pointIdxRadiusSearch;
+			if (octreeSearch_->radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
+				cout << "Found points within " << radius << "of search point." << endl;
+			}
+			return pointIdxRadiusSearch;
 		}
-
-		/*void callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
-			cout << "IN CALLBACK: Goal: (" << msg->pose.position.x << ", " << msg->pose.position.y << ", " << msg->pose.position.z << ")\n";
-			goal_pt_ = msg->pose.position;
-			goal_orientation_ = msg->pose.orientation;
-		}*/		
 
 		/* Runs point cloud publishing and VelociRoACH controls.
 		 * This function continously updates the PointCloud structure as well as the octree based on the 
@@ -151,7 +145,7 @@ class CloudGenerator {
 				}
 				catch (tf::TransformException ex){
 				  ROS_ERROR("%s",ex.what());
-				  ros::Duration(1.0).sleep();
+				  ros::Duration(10.0).sleep();
 				}
 
 

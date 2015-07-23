@@ -1,0 +1,13 @@
+<launch>
+ 
+<!-- GENERATE POINT CLOUD FROM AR TAGS -->
+<!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
+<arg name="pcd_file" default="NULL"/>			
+<arg name="cloud_width" default="15000" /> 
+<arg name="resolution" default="0.005" /> 
+<node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
+
+<!-- PUBLISH TWIST MESSAGE FOR ROBOT WALK -->
+<node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" /> 
+
+</launch>

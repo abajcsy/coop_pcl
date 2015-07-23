@@ -108,6 +108,11 @@ target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
 add_executable(roach_controller src/roach_controller.cpp)
 target_link_libraries(roach_controller ${catkin_LIBRARIES})
 
+add_executable(cloud_goal_pub src/cloud_goal_pub.cpp)
+target_link_libraries(cloud_goal_pub ${catkin_LIBRARIES})
+add_executable(roach_control_pub src/roach_control_pub.cpp)
+target_link_libraries(roach_control_pub ${catkin_LIBRARIES})
+
 add_executable(planar_segmentation src/planar_segmentation.cpp)
 target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
 

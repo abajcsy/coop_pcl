@@ -27,7 +27,7 @@
 #include <deque>          // std::deque
 
 #define PI 3.14159265
-#define EPSILON 0.005
+#define EPSILON 0.001
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
@@ -153,27 +153,6 @@ class RoachController {
 
 		/* Moves robot with randomly generated linear and angular velocity until the
 		 * robot gets stuck. If it gets stuck, then it backtracks and continues randomly exploring.
-		 * Below, there's pseudocode for the backtracking algorithm:
-		 *
-		 * if past N points were NOT the same 
-		 *		backtracking = false;
-		 * else if past N points WERE the same 
-		 *		backtracking = true;
-		 *		num_same_pts = 0;
-		 *
-		 * if BACKTRACKING
-		 *		if num_times_backtracked < max_num && !command_stack.empty()
-		 *			pop the next command from command stack
-		 *			reverse the command
-		 *			num_times_backtracked++
-		 *		else
-		 *			backtracking = false
-		 *			num_times_backtracked = 0
-		 * else if NOT BACKTRACKING
-		 *		if curr_point == prev_point
-		 *			num_same_pts++;
-		 *		randomly generate command
-		 * 		push command onto command stack (only if is not already on stack)
 		 */
 		void randomSmartWalk(){
 			cout << "Robot is starting random smart walk...\n";
@@ -187,9 +166,9 @@ class RoachController {
 
 			bool backtracking = false;
 			int num_same_pts = 0; int max_same_pts = 20;
-			int backtrack_counter = 0; int max_backtrack = 4;
+			int backtrack_counter = 0; int max_backtrack = 15;
 
-			ros::Rate loop_rate(2);
+			ros::Rate loop_rate(0.5);
 		    while(nh_.ok() && input != 'q'){
 				input = getch();   
 				// check if user pressed q to quit
@@ -197,62 +176,39 @@ class RoachController {
 					break;
 				}
 				
-				// check if seen too many of the same point (ie. robot is stuck and need to backtrack)
+				// walk randomly until encounter N of the same consecutive points (i.e. got stuck)
 				if(num_same_pts < max_same_pts){
-					backtracking = false;
-				}else{
-					backtracking = true;
-					num_same_pts = 0;
-				}
-		
-				if(backtracking){
-					// if we still need to backtrack and we have more commands in stack to backtrack with
-					if(backtrack_counter < max_backtrack && !prev_commands.empty()){
-						vector<double> prev_command = prev_commands.top();
-						prev_commands.pop();
-						randLinear = -prev_command[0];
-						randAngle = -prev_command[1];
-						cout << "BACKTRACKING #" << backtrack_counter << " --> linear: " << randLinear << ", angle: " << randAngle << endl;		
-						backtrack_counter++;
-					}else{ // done backtracking, reset counter
-						backtracking = false;
-						backtrack_counter = 0;
-					}
-				}else{
+					randLinear = randDouble(0.05, 0.6); srand(time(NULL));
+					randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
+					// push new command onto stack
+					vector<double> cmd;
+					cmd.push_back(randLinear);
+					cmd.push_back(randAngle);
 					// if the two points are the same
-					if(abs(curr_pt_.x - prev_pt_.x) < EPSILON && abs(curr_pt_.y - prev_pt_.y) < EPSILON && abs(curr_pt_.z - prev_pt_.z) < EPSILON) { 
+					if(abs(curr_pt_.x - prev_pt_.x) < EPSILON && 
+						abs(curr_pt_.y - prev_pt_.y) < EPSILON && 
+						abs(curr_pt_.z - prev_pt_.z) < EPSILON) { 
 						num_same_pts++;
-						// get previous command if exists
-						if(!prev_commands.empty()){
-							vector<double> prev_command = prev_commands.top();
-							randLinear = prev_command[0];
-							randAngle = prev_command[1];
-							cout << "RANDOM WALK (prev command, same pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
-						}else{
-							randLinear = randDouble(-0.6, 0.6); srand(time(NULL));
-							randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
-							// push new command onto stack
-							vector<double> cmd;
-							cmd.push_back(randLinear);
-							cmd.push_back(randAngle);
-							prev_commands.push(cmd);
-							cout << "RANDOM WALK (NEW command, same pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
-						}						
 					}else{
-						randLinear = randDouble(-0.6, 0.6); srand(time(NULL));
-						randAngle = randDouble(-0.6, 0.6); srand(time(NULL));
-						// push new command onto stack
-						vector<double> cmd;
-						cmd.push_back(randLinear);
-						cmd.push_back(randAngle);
-						prev_commands.push(cmd);
-						cout << "RANDOM WALK (NEW command, new pt) --> linear: " << randLinear << ", angle: " << randAngle << endl;	
-					}	
+						cout << "At new point...adding to command stack..." << endl;
+					}
+					this->prev_commands.push(cmd);
+					cout << "RANDOM WALK --> linear: " << randLinear << ", angle: " << randAngle << endl;	
+					backtrack_counter = 0;
+				}else if(backtrack_counter < max_backtrack){
+					vector<double> prev_cmd = prev_commands.top();
+					prev_commands.pop();
+					randLinear = -prev_cmd[0];
+					randAngle = -prev_cmd[1];
+					cout << "BACKTRACKING #" << backtrack_counter << " --> linear: " << randLinear << ", angle: " << randAngle << endl;		
+					backtrack_counter++;
+				}else{
+					num_same_pts = 0;
 				}
 
 				base_cmd.linear.x = randLinear;   
 				base_cmd.angular.z = randAngle;   
-			    cmd_vel_pub_.publish(base_cmd);
+				cmd_vel_pub_.publish(base_cmd);
 
 				ros::spinOnce();
 				loop_rate.sleep();
@@ -269,7 +225,7 @@ class RoachController {
 		}
 	
 
-		/* Moves robot with randomly generated linear and angular velocity 
+		/* Moves robot towards AR Tag cube goal. 
 		 */
 		void walkToARGoal(){
 			cout << "Robot is starting to walk...\n";
@@ -284,7 +240,7 @@ class RoachController {
 			string robot_ar_marker = "ar_marker_1"; 
 			string target_ar_marker = "ar_marker_0";
 
-			ros::Rate loop_rate(4);
+			ros::Rate loop_rate(2);
 		    while(nh_.ok() && input != 'q'){
 				input = getch();   // check if user pressed q to quit
 				if (input == 'q'){
@@ -305,8 +261,24 @@ class RoachController {
 				double xLoc = path_transform.getOrigin().x();
 				double yLoc = path_transform.getOrigin().y();
 				
-				double angular = -0.5*atan2(yLoc,xLoc);
+				double angular = -atan2(yLoc,xLoc)/6;
 				double linear = sqrt(pow(xLoc,2)+pow(yLoc,2));
+
+				// threshold velocities if too large
+				if(abs(angular) > 1.0){
+					cout << "Thresholding angular: " << angular << endl;
+					if(angular < 0) 
+						angular = -0.7;
+					else
+						angular = 0.7;
+				}
+				if(abs(linear) > 1.0){
+					cout << "Thresholding linear: " << linear << endl;
+					if(linear < 0) 
+						linear = -0.7;
+					else
+						linear = 0.7;
+				}
 
 				cout << "linear vel: " << linear << ", angular vel: " << angular << endl;
 
@@ -315,6 +287,7 @@ class RoachController {
 		        cmd_vel_pub_.publish(base_cmd);	
 
 				ros::spinOnce();
+				loop_rate.sleep();
 			}
 
 			// if got command to quit
