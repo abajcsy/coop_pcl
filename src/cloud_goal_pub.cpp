@@ -150,13 +150,13 @@ class CloudGoalPublisher {
 		void updateGoal(pcl::PointXYZ curr_pt){
 			//TODO: WARNING THIS CODE IS NOT COMPLETE, HASN'T BEEN RUN AND ISN'T CORRECT!
 			octree_search_->setResolution(max(ROACH_W,ROACH_H));
-			double min_x = 0, min_y = 0, min_z = 0, max_x = 0, max_y = 0, max_z = 0;
+			double min_x = 0.0, min_y = 0.0, min_z = 0.0, max_x = 0.0, max_y = 0.0, max_z = 0.0;
 			octree_search_->getBoundingBox(min_x, min_y, min_z, max_x, max_y, max_z);
 			double bound_width = abs(max_x - min_x);
 			double bound_length = abs(max_y - min_y);
 			
 			int min_pts = INT_MAX;
-			Eigen::Vector3f min;
+			Eigen::Vector3f max;
 			Eigen::Vector3f min;
 			// subdivide bounding box of octree into roach-sized grid
 			// search through each grid box for the min
@@ -175,10 +175,10 @@ class CloudGoalPublisher {
 				}
 			}
 			// get center of region with the least points
-			int w = abs(max[0] - min[0]);				//TODO THIS IS NOT NECESSARILY CORRECT SYNTAX			
-			int h = abs(max[1] - min[1]);
-			int mid_w = w/2;
-			int mid_h = h/2;
+			double w = abs(max[0] - min[0]);				//TODO THIS IS NOT NECESSARILY CORRECT SYNTAX			
+			double h = abs(max[1] - min[1]);
+			double mid_w = w/2.0;
+			double mid_h = h/2.0;
 			
 			// set goal point to be the center of the region with least points
 			goal_pt_.x = min[0] + mid_w; 
@@ -250,10 +250,8 @@ class CloudGoalPublisher {
 				/*******************************************************/
 
 				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
-				double x = 0.05;
-				while(x >= -0.05 ){
-					double y = -0.02;
-					while(y <= 0.02){
+				for(double x = 0.05; x >= -0.05; x -= 0.02){
+					for(double y = =-0.02; y <= 0.02; y += 0.02){
 						// get stamped pose wrt ar_marker
 						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
 						tf::Stamped<tf::Pose> transformed_corner;
@@ -269,13 +267,11 @@ class CloudGoalPublisher {
 						cloud_->points[num_pts].z = tf_z;
 
 						// update octree cloud pointer and add points to octree
-						octreeSearch_->setInputCloud(cloud_);
-					 	octreeSearch_->addPointsFromInputCloud();
+						octree_search_->setInputCloud(cloud_);
+					 	octree_search_->addPointsFromInputCloud();
 
 						num_pts+=1;
-						y += 0.02;
 					}
-					x -= 0.02;
 				}
 				cloud_->header.stamp = ros::Time::now().toNSec();
 				cloud_pub_.publish(cloud_);
@@ -317,4 +313,3 @@ int main(int argc, char** argv) {
   CloudGoalPublisher driver(nh, width, resolution);
   driver.run(pcd_filename);
 }
-
