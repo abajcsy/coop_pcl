@@ -237,7 +237,7 @@ class RoachController {
 			int input = 'c';
 
 			tf::TransformListener transform_listener;
-			string robot_ar_marker = "ar_marker_1"; 
+			string robot_ar_marker = "ar_marker_2"; 
 			string target_ar_marker = "ar_marker_0";
 
 			ros::Rate loop_rate(2);

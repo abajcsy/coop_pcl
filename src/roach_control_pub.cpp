@@ -86,7 +86,7 @@ class RoachController {
 
 			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);
 			success_pub_ = nh_.advertise<std_msgs::Bool>("success",1);
-			goal_sub_ = nh_.subscribe<geometry_msgs::Point>("goal", 1000, &RoachController::setGoal, this);	
+			goal_sub_ = nh_.subscribe<geometry_msgs::Point>("goal_pt", 1000, &RoachController::setGoal, this);	
 
 			success_.data = false; 
 		}

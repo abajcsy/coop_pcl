@@ -121,7 +121,7 @@ class CloudGenerator {
 		void run(std::string pcd_filename){
 
 			tf::TransformListener transform_listener;
-			string ar_marker = "ar_marker_1"; 
+			string ar_marker = "ar_marker_2"; 
 			ros::Rate loop_rate(4);
 
 			int input = 'c';
