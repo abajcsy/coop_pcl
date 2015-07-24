@@ -133,7 +133,7 @@ class CloudGoalPublisher {
 		 * the cloud_goal_publisher for correct synchronization. 
 		 */
 		void run(std::string pcd_filename){
-			ros::Rate loop_rate(10);
+			ros::Rate loop_rate(3);
 			int x = 0, y = 1, z = 2;
 			cout << "Publishing initial goal..." << endl;
 			goal_pt_.x = x;
@@ -149,10 +149,11 @@ class CloudGoalPublisher {
 					goal_pub_.publish(goal_pt_);
 				}else{
 					cout << "CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
+					goal_pub_.publish(goal_pt_);
 				}
 
 				ros::spinOnce();
-				ros::Duration(0.5).sleep();
+				loop_rate.sleep();
 			}
 		}
 

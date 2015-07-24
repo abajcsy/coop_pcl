@@ -94,7 +94,7 @@ class RoachController {
 		/* Callback function used to set the new goal given by cloud_goal_pub
 		 */
 		void setGoal(const geometry_msgs::Point::ConstPtr& msg){
-			cout << "In setGoal()..." << endl;
+			//cout << "In setGoal()..." << endl;
 			goal_pt_.x = msg->x; 
 			goal_pt_.y = msg->y; 
 			goal_pt_.z = msg->z; 
@@ -104,7 +104,7 @@ class RoachController {
 		 * goal point set by the cloud_goal_pub
 		 */
 		void explore() {
-			ros::Rate loop_rate(1);
+			ros::Rate loop_rate(0.5);
 			int i = 0;
 			while(nh_.ok()){
 				if(i == 10){
