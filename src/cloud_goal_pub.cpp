@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <termios.h>
 #include <math.h> 
+#include <limits.h>
 
 #include <coop_pcl/exploration_info.h>
 
@@ -50,7 +51,7 @@ class CloudGoalPublisher {
 		ros::Subscriber success_sub_;		// subcribes to /success from roach_control_pub.cpp
 
 		PointCloud::Ptr cloud_;
-		OctreeSearch *octreeSearch_;
+		OctreeSearch *octree_search_;
 
 		geometry_msgs::Point goal_pt_;
 		std_msgs::Bool success_;
@@ -107,8 +108,8 @@ class CloudGoalPublisher {
 			cloud_->width = width; 
 			cloud_->points.resize(cloud_->width * cloud_->height);
 
-			octreeSearch_ = new OctreeSearch(resolution);
-			octreeSearch_->setInputCloud(cloud_);
+			octree_search_ = new OctreeSearch(resolution);
+			octree_search_->setInputCloud(cloud_);
 
 			// a point with (-100,-100,-100) specifies no goal
 			goal_pt_.x = -100; goal_pt_.y = -100; goal_pt_.z = -100;
@@ -120,11 +121,70 @@ class CloudGoalPublisher {
 			success_.data = msg->data;
 		}
 
+		/* Initially, set goal to be point forward the length of 1 roach body in its current pose.
+		 */
+		void setStartGoal(string ar_marker){
+			cout << "Publishing initial goal..." << endl;
+			tf::StampedTransform transform;
+			try{
+			  ros::Time now = ros::Time::now();
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+			  cout << "In setStartGoal(): Looking up tf from usb_cam to " << ar_marker << "...\n";
+			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
+			}
+			catch (tf::TransformException ex){
+			  ROS_ERROR("%s",ex.what());
+			  ros::Duration(10.0).sleep();
+			}
+			pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
+			goal_pt_.x = curr_pt.x + ROACH_W;
+			goal_pt_.y = curr_pt.y + ROACH_H;
+			goal_pt_.z = curr_pt.z;
+			goal_pub_.publish(goal_pt_);
+			cout << "Set goal initial goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
+		}
+
 		/* Given knowledge about the current point cloud, octree, and location of roach
 		 * updates the goal point to the least point-dense location in scene. 
 		 */
-		geometry_msgs::Point updateGoal(){
-
+		void updateGoal(pcl::PointXYZ curr_pt){
+			//TODO: WARNING THIS CODE IS NOT COMPLETE, HASN'T BEEN RUN AND ISN'T CORRECT!
+			octree_search_->setResolution(max(ROACH_W,ROACH_H));
+			double min_x = 0, min_y = 0, min_z = 0, max_x = 0, max_y = 0, max_z = 0;
+			octree_search_->getBoundingBox(min_x, min_y, min_z, max_x, max_y, max_z);
+			double bound_width = abs(max_x - min_x);
+			double bound_length = abs(max_y - min_y);
+			
+			int min_pts = INT_MAX;
+			Eigen::Vector3f min;
+			Eigen::Vector3f min;
+			// subdivide bounding box of octree into roach-sized grid
+			// search through each grid box for the min
+			for(int i = min_x; i < max_x; i += ROACH_W){
+				for(int j = min_y; j < max_y; j += ROACH_H){						
+					Eigen::Vector3f min_pt(i,j,min_z);
+					Eigen::Vector3f max_pt(i+ROACH_W,j+ROACH_H,min_z);
+					vector<int> k_indices;
+					// search for points within rectangular search area
+					octree_search_->boxSearch(min_pt, max_pt, k_indices);
+					if(k_indices.size() < min_pts){
+						min = min_pt;
+						max = max_pt;
+						max_pts = k_indices.size();
+					}
+				}
+			}
+			// get center of region with the least points
+			int w = abs(max[0] - min[0]);				//TODO THIS IS NOT NECESSARILY CORRECT SYNTAX			
+			int h = abs(max[1] - min[1]);
+			int mid_w = w/2;
+			int mid_h = h/2;
+			
+			// set goal point to be the center of the region with least points
+			goal_pt_.x = min[0] + mid_w; 
+			goal_pt_.y = max[0] + mid_h;
+			goal_pt_.z = min_z;
+			cout << "In updateGoal(): New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";			
 		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
@@ -133,24 +193,93 @@ class CloudGoalPublisher {
 		 * the cloud_goal_publisher for correct synchronization. 
 		 */
 		void run(std::string pcd_filename){
+			tf::TransformListener transform_listener;
+			string ar_marker = "ar_marker_1"; 
+
+			int input = 'c';
+			int num_pts = 0;
+			int maxCloudSize = cloud_->width*cloud_->height;
+
+			cout << "Press 'q' to quit data collection and save point cloud.\n";
+
 			ros::Rate loop_rate(3);
-			int x = 0, y = 1, z = 2;
-			cout << "Publishing initial goal..." << endl;
-			goal_pt_.x = x;
-			goal_pt_.y = y;
-			goal_pt_.z = z;
-			goal_pub_.publish(goal_pt_);
-			while(nh_.ok()){
+
+			/*************** SET INITIAL GOAL FOR VELOCIROACH **************/
+			this->setStartGoal(ar_marker);
+			/***************************************************************/
+
+			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
+				input = getch();   // check if user pressed q to quit data collection
+				if (input == 'q'){
+					break;
+				}
+
+				/*********** GET TF FROM USB_CAM TO AR_MARKER ***********/
+				tf::StampedTransform transform;
+				try{
+				  ros::Time now = ros::Time::now();
+				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+				  cout << "In run(): Looking up tf from usb_cam to " << ar_marker << "...\n";
+				  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
+				}
+				catch (tf::TransformException ex){
+				  ROS_ERROR("%s",ex.what());
+				  ros::Duration(10.0).sleep();
+				}
+				/*******************************************************/
+
+				/*************** GET GOAL FOR VELOCIROACH **************/
 				if(success_.data){ // if roach reached goal
 					cout << "CloudGoal: Roach reached goal --> setting new goal..." << endl;
-					goal_pt_.x = ++x;
-					goal_pt_.y = ++y;
-					goal_pt_.z = ++z;
+					pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
+					if(goal_pt_.x == -100 && goal_pt_.y == -100 && goal_pt_.z == -100){ 
+						// if have no goal set goal (or first pass through)
+						// set goal to be point forward the length of 1 roach body
+						goal_pt_.x = curr_pt.x + ROACH_W;
+						goal_pt_.y = curr_pt.y + ROACH_H;
+						goal_pt_.z = curr_pt.z;
+					}else{
+						// query octree for goal point based on density
+						this->updateGoal(curr_pt);
+					}
 					goal_pub_.publish(goal_pt_);
 				}else{
 					cout << "CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
 					goal_pub_.publish(goal_pt_);
 				}
+				/*******************************************************/
+
+				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
+				double x = 0.05;
+				while(x >= -0.05 ){
+					double y = -0.02;
+					while(y <= 0.02){
+						// get stamped pose wrt ar_marker
+						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
+						tf::Stamped<tf::Pose> transformed_corner;
+						// transform pose wrt usb_cam
+						transform_listener.transformPose("usb_cam", corner, transformed_corner);
+						// push xyz coord of pt to point cloud
+						double tf_x = transformed_corner.getOrigin().x();
+						double tf_y = transformed_corner.getOrigin().y();
+						double tf_z = transformed_corner.getOrigin().z();
+			
+						cloud_->points[num_pts].x = tf_x;
+						cloud_->points[num_pts].y = tf_y;
+						cloud_->points[num_pts].z = tf_z;
+
+						// update octree cloud pointer and add points to octree
+						octreeSearch_->setInputCloud(cloud_);
+					 	octreeSearch_->addPointsFromInputCloud();
+
+						num_pts+=1;
+						y += 0.02;
+					}
+					x -= 0.02;
+				}
+				cloud_->header.stamp = ros::Time::now().toNSec();
+				cloud_pub_.publish(cloud_);
+				/*********************************************************/
 
 				ros::spinOnce();
 				loop_rate.sleep();
