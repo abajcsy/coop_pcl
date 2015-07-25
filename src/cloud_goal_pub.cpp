@@ -25,6 +25,7 @@
 // VelociRoACH measurements in meters
 #define ROACH_W 0.04
 #define ROACH_H 0.10
+#define BOUND_BOX_SZ 0.7
 
 using namespace std;
 
@@ -130,7 +131,7 @@ class CloudGoalPublisher {
 		 */
 		void publishMarker(geometry_msgs::Point pt, double scaleX, double scaleY, double scaleZ, double r, double g, double b){
 			visualization_msgs::Marker marker;
-			marker.header.frame_id = "usb_cam";
+			marker.header.frame_id = "map";
 			marker.header.stamp = ros::Time();
 			marker.ns = "my_namespace";
 			marker.id = 0;
@@ -163,7 +164,7 @@ class CloudGoalPublisher {
 				double y = pts[i].y;
 				double z = pts[i].z;	
 
-				marker_array_msg.markers[i].header.frame_id = "usb_cam";
+				marker_array_msg.markers[i].header.frame_id = "map";
 				marker_array_msg.markers[i].header.stamp = ros::Time();
 				marker_array_msg.markers[i].ns = "my_namespace";
 				marker_array_msg.markers[i].id = i; 
@@ -209,9 +210,9 @@ class CloudGoalPublisher {
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+			  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
 			  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
-			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
+			  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
@@ -221,8 +222,8 @@ class CloudGoalPublisher {
 			cloud_pub_.publish(cloud_);(curr_pt.x, curr_pt.y, curr_pt.z, 0.0, 1.0, 0.0);
 
 			cout << "		Current location point: (" << curr_pt.x << ", " << curr_pt.y << ", " << curr_pt.z << ")\n";
-			goal_pt_.x = curr_pt.x + ROACH_W;
-			goal_pt_.y = curr_pt.y + ROACH_H;
+			goal_pt_.x = curr_pt.x + 2*ROACH_W;
+			goal_pt_.y = curr_pt.y + 2*ROACH_H;
 			goal_pt_.z = curr_pt.z;
 			goal_pub_.publish(goal_pt_);
 			cout << "		Set goal initial goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
@@ -235,7 +236,7 @@ class CloudGoalPublisher {
 		 * updates the goal point to the least point-dense location in scene. 
 		 */
 		void updateGoal(pcl::PointXYZ curr_pt){
-			//TODO: WARNING THIS CODE IS NOT COMPLETE, HASN'T BEEN RUN AND ISN'T CORRECT!
+			//TODO: WARNING THIS CODE IS NOT COMPLETE AND ISN'T CORRECT!
 			int depth = octree_search_->getTreeDepth();
 			cout << "In updateGoal(): " << endl;
 			cout << "		Tree Depth: " << depth << endl;
@@ -284,10 +285,10 @@ class CloudGoalPublisher {
 			Eigen::Vector3f min;
 			// subdivide bounding box of octree into roach-sized grid
 			// search through each grid box for the min
-			for(double col = (max_x - bound_width); col < max_x; col += ROACH_W){ // start in upper left hand corner of bounding box base
+			/*for(double col = min_x; col < max_x; col += ROACH_W){ // start in upper left hand corner of bounding box base
 				for(double row = max_y; row > min_y; row -= ROACH_H){						
-					Eigen::Vector3f min_pt(col, row, max_z);
-					Eigen::Vector3f max_pt(col+ROACH_W, row-ROACH_H, max_z);
+					Eigen::Vector3f min_pt(col, row, min_z);
+					Eigen::Vector3f max_pt(col+ROACH_W, row-ROACH_H, min_z);
 					vector<int> k_indices;
 					// search for points within rectangular search area
 					int num_pts_in_box = octree_search_->boxSearch(min_pt, max_pt, k_indices);
@@ -299,7 +300,32 @@ class CloudGoalPublisher {
 						cout << "		Found less dense region: density = " << min_pts << endl;
 					}
 				}
-			}	
+			}*/	
+			double increment = abs(max_x - min_x)/4.0;
+			for(double col = min_x; col < max_x; col += increment){ // start in upper left hand corner of bounding box base
+				for(double row = max_y; row > min_y; row -= increment){						
+					Eigen::Vector3f min_pt(col+increment, row, min_z);
+					Eigen::Vector3f max_pt(col, row-increment, BOUND_BOX_SZ);
+					vector<int> k_indices;
+					// search for points within rectangular search area
+					int num_pts_in_box = octree_search_->boxSearch(min_pt, max_pt, k_indices);
+					//cout << "		Num points in box region: " << num_pts_in_box << endl;
+					if(num_pts_in_box < min_pts){
+						min = min_pt;
+						max = max_pt;
+						min_pts = num_pts_in_box;
+						cout << "		Found less dense region: density = " << min_pts << endl;
+					}
+				}
+			}
+			
+			vector<geometry_msgs::Point> roi_pts;
+			geometry_msgs::Point roi_pt1, roi_pt2;
+			roi_pt1.x = min[0]; roi_pt1.y = min[1]; roi_pt1.z = min[2];
+			roi_pt2.x = max[0]; roi_pt2.y = max[1]; roi_pt2.z = max[2];
+			roi_pts.push_back(roi_pt1);
+			roi_pts.push_back(roi_pt2);
+			publishMarkerArray(roi_pts, 0.05, 1.0, 1.0, 1.0);
 			// get center of region with the least points
 			double w = abs(max[0] - min[0]);					
 			double h = abs(max[1] - min[1]);
@@ -310,9 +336,9 @@ class CloudGoalPublisher {
 			cout << "		ROI Width: " << w << ", Height: " << h << endl;
 			
 			// set goal point to be the center of the region with least points
-			goal_pt_.x = min[0] + mid_w; 
-			goal_pt_.y = max[0] + mid_h;
-			goal_pt_.z = max_z;
+			goal_pt_.x = min[0] - mid_w; 
+			goal_pt_.y = max[1] + mid_h;
+			goal_pt_.z = min_z;
 			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
 			cout << "		Publishing goal marker..." << endl;
 					
@@ -326,15 +352,15 @@ class CloudGoalPublisher {
 		 */
 		void run(std::string pcd_filename){
 			tf::TransformListener transform_listener;
-			string ar_marker = "ar_marker_2"; 
+			string ar_marker = "ar_marker_1"; 
 
 			int input = 'c';
 			int num_pts = 0;
 			int maxCloudSize = cloud_->width*cloud_->height;
 			
 			octree_search_->setResolution(min(ROACH_W,ROACH_H));
-			double minX_arg = -0.5, minY_arg = 0.0, minZ_arg = 0.0;
-			double maxX_arg = 0.5, maxY_arg = 1.0, maxZ_arg = 1.0;	 
+			double minX_arg = -0.35, minY_arg = 0.0, minZ_arg = 0.0;
+			double maxX_arg = 0.35, maxY_arg = 0.7, maxZ_arg = 1.0;	 
 			octree_search_->defineBoundingBox(minX_arg,minY_arg,minZ_arg,maxX_arg,maxY_arg,maxZ_arg);
 
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
@@ -355,9 +381,9 @@ class CloudGoalPublisher {
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+				  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
 				  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
-				  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
+				  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
 				  ROS_ERROR("%s",ex.what());
