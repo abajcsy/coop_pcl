@@ -21,6 +21,7 @@
 #include <limits.h>
 
 #include "opencv2/core/core.hpp"
+#include "opencv2/calib3d/calib3d.hpp"
 
 #include <coop_pcl/exploration_info.h>
 
@@ -28,6 +29,9 @@
 #define ROACH_W 0.04
 #define ROACH_H 0.10
 #define BOUND_BOX_SZ 0.7
+
+#define GOAL_GRID_W 8
+#define GOAL_GRID_H 8
 
 using namespace std;
 
@@ -60,6 +64,10 @@ class CloudGoalPublisher {
 
 		geometry_msgs::Point goal_pt_;
 		std_msgs::Bool success_;
+
+		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
+		// stores within it how many times each goal has been assigned
+		double goal_grid_[GOAL_GRID_H][GOAL_GRID_W]; 
 
 		/* Returns a random double between fMin and fMax.
 		 */
@@ -363,72 +371,37 @@ class CloudGoalPublisher {
 			  ROS_ERROR("%s",ex.what());
 			  ros::Duration(10.0).sleep();
 			}
-			vector<pcl::PointXYZ> roach_corners, img_corners;
-			// pts should be added in clockwise order
-			tf::Stamped<tf::Pose> corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
-			tf::Stamped<tf::Pose> corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker);
-			tf::Stamped<tf::Pose> corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker);
-			tf::Stamped<tf::Pose> corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
+			vector<cv::Point2f> roach_corners, img_corners;
+			// get points from point cloud - should be added in clockwise order
+			tf::Stamped<tf::Pose> corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker),
+								corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
+								corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
+								corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
 			tf::Stamped<tf::Pose> tf_corner1, tf_corner2, tf_corner3, tf_corner4;
 			transform_listener.transformPose("usb_cam", corner1, tf_corner1);
 			transform_listener.transformPose("usb_cam", corner2, tf_corner2);
 			transform_listener.transformPose("usb_cam", corner3, tf_corner3);
 			transform_listener.transformPose("usb_cam", corner4, tf_corner4);
-			pcl::PointXYZ pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y(),tf_corner1.getOrigin().z());
-			pcl::PointXYZ pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y(),tf_corner2.getOrigin().z());
-			pcl::PointXYZ pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y(),tf_corner3.getOrigin().z());
-			pcl::PointXYZ pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y(),tf_corner4.getOrigin().z());
+			cv::Point2f pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
+						pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y()),
+						pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y()),
+						pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
-			
-			pcl::PointXYZ img_pt1(0,480,0);
-			pcl::PointXYZ img_pt2(0,0,0);
-			pcl::PointXYZ img_pt3(640,0,0);
-			pcl::PointXYZ img_pt4(640,480,0);
+			// get corner points from camera image - also added in clockwise order
+			cv::Point2f img_pt1(0.0,480.0), img_pt2(0.0,0.0), img_pt3(640.0,0.0), img_pt4(640.0,480.0);
 			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
 			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
-			int i = 0;
-			cv::Mat A = cv::Mat::zeros(8, 8, CV_64F);
-			cv::Mat b = cv::Mat::zeros(8, 1, CV_64F);
-			// populate matrix A
-			for(int r = 0; r < 8; r+=2) {
-					A[r][0] = roach_corners[i].x;					//TODO THIS IS THE WRONG WAY TO INDEX INTO OPENCV ARRAY
-					A[r][1] = roach_corners[i].y;
-					A[r][2] = 1;
-					A[r][6] = -roach_corners[i].x*img_corners[i].x;
-					A[r][7] = -roach_corners[i].y*img_corners[i].x;
-					i++; 
-			}
-			i = 0;
-			for(int r = 1; r < 8; r+=2) {
-					A[r][3] = roach_corners[i].x;
-					A[r][4] = roach_corners[i].y;
-					A[r][5] = 1;
-					A[r][6] = -roach_corners[i].x*img_corners[i].y;
-					A[r][7] = -roach_corners[i].y*img_corners[i].y;
-					i++; 
-			}
-			i = 0;
-			// populate vector b
-			for(int j = 0; j < img_corners.size(); j++){
-				b[i][0] = img_corners[j].x;
-				b[i+1][0] = img_corners[j].y;
-				i+=2;
-			}
-			// solve Ax = b
-			cv::Mat x = (A.inv()).mul(b);
-			cv::Mat H = cv::Mat::zeros(3, 3, CV_64F);
-			i = 0;
-			for(int r = 0; r < 3; r++){
-				for(int c = 0; c < 2; c++){
-					H[r][c] = x[i][0];
-					i++;
-				}
-			}
-			H[3][3] = 1;
+		
+			cv::Mat H = cv::findHomography(roach_corners, img_corners, 0);	// note: 0 means we use regular method to compute homography matrix using all points
 			return H;
 		}
 		
+		void assignGoal(){
+			srand(time(NULL));
+			double gridRegion = rand() % (GOAL_GRID_W*GOAL_GRID_H)+ 1; // get random number between 1 and GOAL_GRID_W*GOAL_GRID_H
+			
+		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
 		 *
@@ -449,6 +422,7 @@ class CloudGoalPublisher {
 
 			/*************** SET INITIAL GOAL FOR VELOCIROACH **************/
 			this->setStartGoal(ar_marker);
+			cv::Mat H = this->computeHomography(ar_marker);
 			/***************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
