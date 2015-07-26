@@ -20,6 +20,8 @@
 #include <math.h> 
 #include <limits.h>
 
+#include "opencv2/core/core.hpp"
+
 #include <coop_pcl/exploration_info.h>
 
 // VelociRoACH measurements in meters
@@ -345,6 +347,89 @@ class CloudGoalPublisher {
 			publishMarker(goal_pt_, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
 		}
 
+		/* Computes homography matrix given current coordinates from the initial pose of the AR tag
+		 * (which we take to represent the ground plane under the robots feet)
+		 */
+		cv::Mat computeHomography(string ar_marker){
+			tf::TransformListener transform_listener;
+			tf::StampedTransform transform;
+			try{
+			  ros::Time now = ros::Time::now();
+			  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
+			  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
+			  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
+			}
+			catch (tf::TransformException ex){
+			  ROS_ERROR("%s",ex.what());
+			  ros::Duration(10.0).sleep();
+			}
+			vector<pcl::PointXYZ> roach_corners, img_corners;
+			// pts should be added in clockwise order
+			tf::Stamped<tf::Pose> corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> tf_corner1, tf_corner2, tf_corner3, tf_corner4;
+			transform_listener.transformPose("usb_cam", corner1, tf_corner1);
+			transform_listener.transformPose("usb_cam", corner2, tf_corner2);
+			transform_listener.transformPose("usb_cam", corner3, tf_corner3);
+			transform_listener.transformPose("usb_cam", corner4, tf_corner4);
+			pcl::PointXYZ pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y(),tf_corner1.getOrigin().z());
+			pcl::PointXYZ pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y(),tf_corner2.getOrigin().z());
+			pcl::PointXYZ pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y(),tf_corner3.getOrigin().z());
+			pcl::PointXYZ pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y(),tf_corner4.getOrigin().z());
+			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
+			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
+			
+			pcl::PointXYZ img_pt1(0,480,0);
+			pcl::PointXYZ img_pt2(0,0,0);
+			pcl::PointXYZ img_pt3(640,0,0);
+			pcl::PointXYZ img_pt4(640,480,0);
+			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
+			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
+			int i = 0;
+			cv::Mat A = cv::Mat::zeros(8, 8, CV_64F);
+			cv::Mat b = cv::Mat::zeros(8, 1, CV_64F);
+			// populate matrix A
+			for(int r = 0; r < 8; r+=2) {
+					A[r][0] = roach_corners[i].x;					//TODO THIS IS THE WRONG WAY TO INDEX INTO OPENCV ARRAY
+					A[r][1] = roach_corners[i].y;
+					A[r][2] = 1;
+					A[r][6] = -roach_corners[i].x*img_corners[i].x;
+					A[r][7] = -roach_corners[i].y*img_corners[i].x;
+					i++; 
+			}
+			i = 0;
+			for(int r = 1; r < 8; r+=2) {
+					A[r][3] = roach_corners[i].x;
+					A[r][4] = roach_corners[i].y;
+					A[r][5] = 1;
+					A[r][6] = -roach_corners[i].x*img_corners[i].y;
+					A[r][7] = -roach_corners[i].y*img_corners[i].y;
+					i++; 
+			}
+			i = 0;
+			// populate vector b
+			for(int j = 0; j < img_corners.size(); j++){
+				b[i][0] = img_corners[j].x;
+				b[i+1][0] = img_corners[j].y;
+				i+=2;
+			}
+			// solve Ax = b
+			cv::Mat x = (A.inv()).mul(b);
+			cv::Mat H = cv::Mat::zeros(3, 3, CV_64F);
+			i = 0;
+			for(int r = 0; r < 3; r++){
+				for(int c = 0; c < 2; c++){
+					H[r][c] = x[i][0];
+					i++;
+				}
+			}
+			H[3][3] = 1;
+			return H;
+		}
+		
+
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
 		 *
 		 * NOTE: roach_control_pub's exploration method needs to run at lower Hz then 
@@ -357,11 +442,6 @@ class CloudGoalPublisher {
 			int input = 'c';
 			int num_pts = 0;
 			int maxCloudSize = cloud_->width*cloud_->height;
-			
-			octree_search_->setResolution(min(ROACH_W,ROACH_H));
-			double minX_arg = -0.35, minY_arg = 0.0, minZ_arg = 0.0;
-			double maxX_arg = 0.35, maxY_arg = 0.7, maxZ_arg = 1.0;	 
-			octree_search_->defineBoundingBox(minX_arg,minY_arg,minZ_arg,maxX_arg,maxY_arg,maxZ_arg);
 
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
 
@@ -377,7 +457,7 @@ class CloudGoalPublisher {
 					break;
 				}
 				cout << "In run():" << endl;
-				/*********** GET TF FROM USB_CAM TO AR_MARKER ***********/
+				/*********** GET TF FROM MAP TO AR_MARKER ***********/
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
