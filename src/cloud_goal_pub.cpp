@@ -11,6 +11,7 @@
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/Quaternion.h>
 #include <std_msgs/Bool.h>
+#include <sensor_msgs/CameraInfo.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <iostream>
 #include <string>
@@ -29,9 +30,8 @@
 #include <coop_pcl/exploration_info.h>
 
 // VelociRoACH measurements in meters
-#define ROACH_W 0.04
-#define ROACH_H 0.10
-#define BOUND_BOX_SZ 0.7
+#define ROACH_W 0.07
+#define ROACH_H 0.11
 
 #define GOAL_GRID_W 8
 #define GOAL_GRID_H 8
@@ -63,16 +63,19 @@ class CloudGoalPublisher {
 		ros::Publisher marker_pub_;			// publishes marker representing next goal point to /visualization_marker
 		ros::Publisher marker_array_pub_;	// publishes marker array to /visualization_marker_array
 		ros::Subscriber success_sub_;		// subcribes to /success from roach_control_pub.cpp
+		ros::Subscriber camera_info_sub_;	// subscribes to /usb_cam/camera_info to get camera projection matrix
 
 		tf::TransformListener transform_listener;
 
 		PointCloud::Ptr cloud_;
 		OctreeSearch *octree_search_;
 
-		geometry_msgs::Point goal_pt_;
-		std_msgs::Bool success_;
-		cv::Mat homography_;
-		cv::Mat homography_inverse_;
+		geometry_msgs::Point goal_pt_;		// next goal location for roach to move to
+		std_msgs::Bool success_;			// stores if the roach was able to reach goal location
+
+		cv::Mat homography_;				// homography between ground coords and camera pixels
+		cv::Mat homography_inverse_;		
+		cv::Mat P_;							// camera projection matrix (comes from camera_info topic)
 
 		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
 		// stores within it the probability of landing on that grid location
@@ -122,6 +125,7 @@ class CloudGoalPublisher {
 			cloud_pub_ = nh_.advertise<PointCloud>("points2", 1);
 			goal_pub_ = nh_.advertise<geometry_msgs::Point>("goal_pt", 1);
 			success_sub_ = nh_.subscribe<std_msgs::Bool>("success", 1000, &CloudGoalPublisher::setSuccess, this);
+			camera_info_sub_ = nh_.subscribe<sensor_msgs::CameraInfo>("usb_cam/camera_info", 1000, &CloudGoalPublisher::setP, this);
 
 			marker_pub_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 1);
 			marker_array_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
@@ -158,6 +162,19 @@ class CloudGoalPublisher {
 			success_.data = msg->data;
 		}
 
+		/* Callback function used to set Projection/camera matrix from CameraInfo
+		 */
+		void setP(const sensor_msgs::CameraInfo::ConstPtr& msg){
+			P_ = cv::Mat(3,4, CV_64FC1, double(0));
+			int idx = 0;
+			for(int i = 0; i < P_.rows; i++){
+				for(int j = 0; j < P_.cols; j++){
+					P_.at<double>(i,j) = msg->P[idx]; // get 3x4 row-major matrix as 1D array (have to reshape)
+					idx++;
+				}	
+			}
+		}
+
 		/* Publishes marker for RVIZ at location (x,y,z) with (r,g,b) color
 		 */
 		void publishMarker(geometry_msgs::Point pt, double scaleX, double scaleY, double scaleZ, double r, double g, double b){
@@ -185,6 +202,8 @@ class CloudGoalPublisher {
 			marker_pub_.publish(marker);
 		}		
 
+		/* Publishes group of markers for RVIZ with cubes of sidelength and (r,g,b) color
+		 */
 		void publishMarkerArray(vector<geometry_msgs::Point> pts, double sideLen, double r, double g, double b){
 			// set up MarkerArray for visualizing in RVIZ
 			visualization_msgs::MarkerArray marker_array_msg;
@@ -241,7 +260,7 @@ class CloudGoalPublisher {
 			try{
 			  ros::Time now = ros::Time::now();
 			  transform_listener.waitForTransform(ar_marker, "usb_cam", now, ros::Duration(5.0));
-			  cout << "		Looking up tf from " << ar_marker << "to usb_cam...\n";
+			  cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
 			  transform_listener.lookupTransform(ar_marker, "usb_cam", ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
@@ -249,22 +268,56 @@ class CloudGoalPublisher {
 			  ros::Duration(10.0).sleep();
 			}
 			vector<cv::Point2f> roach_corners, img_corners;
-
-			// real world measurements of roach corners in counter clockwise order
+			/*************** get real world measurements of roach corners in counter clockwise order ************/
 			cv::Point2f pt1(0.0,0.0), 
-						pt2(0.0,0.11),
-						pt3(0.07,0.11),
-						pt4(0.07,0.0);
+						pt2(0.0,ROACH_H),
+						pt3(ROACH_W,ROACH_H),
+						pt4(ROACH_W,0.0);
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
-			// get corner points from camera image - also added in clockwise order
-			cv::Point2f img_pt1(0.0,CAMERA_IMG_H), img_pt2(0.0,0.0), img_pt3(CAMERA_IMG_W,0.0), img_pt4(CAMERA_IMG_W,CAMERA_IMG_H);
+			/****************************************************************************************************/
+
+			/*************************** get roach corners in the usb_cam frame *********************************/
+			/* (assumption is that the ar_marker is lying on its back with z pointing upwards, x to the right and y forward)  */
+			tf::Stamped<tf::Pose> ll_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.035, -0.055, 0.0)),ros::Time(0), ar_marker),
+					ul_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.035, 0.055, 0.0)),ros::Time(0), ar_marker),
+					ur_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.035, 0.055, 0.0)),ros::Time(0), ar_marker),
+					lr_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.035, -0.055, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> tf_ll_corner, tf_ul_corner, tf_ur_corner, tf_lr_corner;
+			transform_listener.transformPose("usb_cam", ll_corner, tf_ll_corner);
+			transform_listener.transformPose("usb_cam", ul_corner, tf_ul_corner);
+			transform_listener.transformPose("usb_cam", ur_corner, tf_ur_corner);
+			transform_listener.transformPose("usb_cam", lr_corner, tf_lr_corner);
+			// convert to stupid opencv matrix...
+			cv::Mat ll_xyz1 = (cv::Mat_<double>(4,1) << tf_ll_corner.getOrigin().x(), tf_ll_corner.getOrigin().y(), tf_ll_corner.getOrigin().z(), 1.0);
+			cv::Mat ul_xyz1 = (cv::Mat_<double>(4,1) << tf_ul_corner.getOrigin().x(), tf_ul_corner.getOrigin().y(), tf_ul_corner.getOrigin().z(), 1.0);
+			cv::Mat ur_xyz1 = (cv::Mat_<double>(4,1) << tf_ur_corner.getOrigin().x(), tf_ur_corner.getOrigin().y(), tf_ur_corner.getOrigin().z(), 1.0);
+			cv::Mat lr_xyz1 = (cv::Mat_<double>(4,1) << tf_lr_corner.getOrigin().x(), tf_lr_corner.getOrigin().y(), tf_lr_corner.getOrigin().z(), 1.0);
+			// make sure to wait until P_ is initialized with message from CameraInfo
+			while(P_.rows == 0 && P_.cols == 0){	
+				ros::spinOnce();
+			}
+			// get pixel coordinates of roach corners using projection/camera matrix P_
+			cv::Mat trans_ll_xyz1 = P_*ll_xyz1;
+			cv::Mat trans_ul_xyz1 = P_*ul_xyz1;
+			cv::Mat trans_ur_xyz1 = P_*ur_xyz1;
+			cv::Mat trans_lr_xyz1 = P_*lr_xyz1;
+			cv::Point2f img_pt1(trans_ll_xyz1.at<double>(0,0)/trans_ll_xyz1.at<double>(2,0), trans_ll_xyz1.at<double>(1,0)/trans_ll_xyz1.at<double>(2,0)), 
+						img_pt2(trans_ul_xyz1.at<double>(0,0)/trans_ul_xyz1.at<double>(2,0), trans_ul_xyz1.at<double>(1,0)/trans_ul_xyz1.at<double>(2,0)),
+						img_pt3(trans_ur_xyz1.at<double>(0,0)/trans_ur_xyz1.at<double>(2,0), trans_ur_xyz1.at<double>(1,0)/trans_ur_xyz1.at<double>(2,0)),
+						img_pt4(trans_lr_xyz1.at<double>(0,0)/trans_lr_xyz1.at<double>(2,0), trans_lr_xyz1.at<double>(1,0)/trans_lr_xyz1.at<double>(2,0));
 			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
 			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
+
+			cout << "		Pixel-coords Roach corners:" << endl;
+			for(int i = 0; i < img_corners.size(); i++){
+				cout << "		(" << img_corners[i].x << ", " << img_corners[i].y << ")\n";
+			}
 			cout << "		Real-life Roach corners:" << endl;
 			for(int i = 0; i < roach_corners.size(); i++){
 				cout << "		(" << roach_corners[i].x << ", " << roach_corners[i].y << ")\n";
 			}
+			/****************************************************************************************************/
 		
 			// note: 0 means we use regular method to compute homography matrix using all points
 			homography_ = cv::findHomography(roach_corners, img_corners, 0);	
@@ -277,15 +330,8 @@ class CloudGoalPublisher {
 				}
 				cout << endl;
 			}
-			cout << "		Printing Inverse Homography Matrix:" << endl;						
-			for(int i = 0; i < homography_inverse_.rows; i++){
-				cout << "		";
-				for(int j = 0; j < homography_inverse_.cols; j++){
-					cout << homography_inverse_.at<double>(i,j) << " ";
-				}
-				cout << endl;
-			}
-			//--------- publish marker array in rviz for boundary of FOV ----------//
+
+			/************************* publish marker array in rviz for boundary of FOV *************************/
 			double ll_data[3] = {0.0, CAMERA_IMG_H, 1.0};
 			double ul_data[3] = {0.0, 0.0, 1.0};
 			double ur_data[3] = {CAMERA_IMG_W, 0.0, 1.0};
@@ -308,15 +354,14 @@ class CloudGoalPublisher {
 			p2.x = ul_x; p2.y = ul_y; p2.z = 0.0;
 			p3.x = ur_x; p3.y = ur_y; p3.z = 0.0;
 			p4.x = lr_x; p4.y = lr_y; p4.z = 0.0;
-			cout << "		ll: (" << ll_x << ", " << ll_y << ")\n";
-			cout << "		ul: (" << ul_x << ", " << ul_y << ")\n";
-			cout << "		ur: (" << ur_x << ", " << ur_y << ")\n";
-			cout << "		lr: (" << lr_x << ", " << lr_y << ")\n";
-			pts.push_back(p1);
-			pts.push_back(p2);
-			pts.push_back(p3);
-			pts.push_back(p4);
+			cout << "		ll corner of camera in real-world: (" << ll_x << ", " << ll_y << ")\n";
+			cout << "		ul corner of camera in real-world: (" << ul_x << ", " << ul_y << ")\n";
+			cout << "		ur corner of camera in real-world: (" << ur_x << ", " << ur_y << ")\n";
+			cout << "		lr corner of camera in real-world: (" << lr_x << ", " << lr_y << ")\n";
+			pts.push_back(p1); pts.push_back(p2);
+			pts.push_back(p3); pts.push_back(p4);
 			publishMarkerArray(pts, 0.05, 0.0, 0.0, 1.0);
+			/***************************************************************************************************/
 		}
 		
 		/* Assigns the next goal location by dividing the camera image plane into GOAL_GRID_H*GOAL_GRID_W
@@ -441,15 +486,7 @@ class CloudGoalPublisher {
 				if(success_.data){ // if roach reached goal
 					cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 					pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
-					if(goal_pt_.x == -100 && goal_pt_.y == -100 && goal_pt_.z == -100){ 
-						// if have no goal set goal (or first pass through)
-						// set goal to be point forward the length of 1 roach body
-						goal_pt_.x = curr_pt.x + ROACH_W;
-						goal_pt_.y = curr_pt.y + ROACH_H;
-						goal_pt_.z = curr_pt.z;
-					}else{
-						this->assignGoal();
-					}
+					this->assignGoal();
 					goal_pub_.publish(goal_pt_);
 				}else{
 					cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
@@ -486,8 +523,6 @@ class CloudGoalPublisher {
 				cloud_pub_.publish(cloud_);
 				cout << "		Finished publishing point cloud..." << endl;
 				/*********************************************************/
-				//cout << "			Current location point: (" << curr_pt.x << ", " << curr_pt.y << ", " << curr_pt.z << ")\n";
-				//this->updateGoal(curr_pt);
 
 				ros::spinOnce();
 				loop_rate.sleep();
@@ -513,25 +548,6 @@ int main(int argc, char** argv) {
 	ROS_ERROR("Not enough arguments! Usage example: cloud_goal_pub test_pcd.pcd 0.01 15000");
 	ros::shutdown();
   }
-
-  /****** GET HOMOGRAPHY POINTS FROM USER *******
-  cv::Mat frame;
-  // Capturing data from camera
-  // Caution: It requires webcam to be attached
-  cv::VideoCapture cap(0);
-  // you can also use
-  // cv::VideoCapture cap("video filename");
-  // to capture the frame from a video instead of webcam
-  if(!cap.isOpened())
-  	printf("No Camera Detected");
-  else{
-    cv::namedWindow("Webcam Video");
-    for(;;){
-        cap >> frame; // get a new frame from camera
-        cv::imshow("Webcam Video",frame);
-        if(cv::waitKey(30) >= 0) break;
-    }
-  }*/
 
   string pcd_filename = argv[1];
   float resolution = strtof(argv[2], NULL);  
