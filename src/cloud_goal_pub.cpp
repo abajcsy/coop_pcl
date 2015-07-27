@@ -19,9 +19,12 @@
 #include <termios.h>
 #include <math.h> 
 #include <limits.h>
+#include <fstream>
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
 
 #include <coop_pcl/exploration_info.h>
 
@@ -72,7 +75,7 @@ class CloudGoalPublisher {
 		cv::Mat homography_inverse_;
 
 		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
-		// stores within it how many times each goal has been assigned
+		// stores within it the probability of landing on that grid location
 		double goal_grid_[GOAL_GRID_H][GOAL_GRID_W]; 
 
 		/* Returns a random double between fMin and fMax.
@@ -135,6 +138,18 @@ class CloudGoalPublisher {
 
 			// a point with (-100,-100,-100) specifies no goal
 			goal_pt_.x = -100; goal_pt_.y = -100; goal_pt_.z = -100;
+
+			// initially, every grid location has equal chance of being selected
+			double prob = 1.0/(GOAL_GRID_H*GOAL_GRID_W);
+			cout << "In constructor():" << endl;
+			cout << "prob: " << prob;
+			for(int row = 0; row < GOAL_GRID_H; row++){
+				for(int col = 0; col < GOAL_GRID_W; col++){
+					goal_grid_[row][col] = prob;
+					cout << goal_grid_[row][col] << " ";
+				}
+				cout << endl;			
+			}
 		}
 
 		/* Callback function used to set if roach has reached the goal point.
@@ -151,7 +166,7 @@ class CloudGoalPublisher {
 			marker.header.stamp = ros::Time();
 			marker.ns = "my_namespace";
 			marker.id = 0;
-			marker.type = visualization_msgs::Marker::CUBE;
+			marker.type = visualization_msgs::Marker::SPHERE;
 			marker.action = visualization_msgs::Marker::ADD;
 			marker.pose.position.x = pt.x;
 			marker.pose.position.y = pt.y;
@@ -234,33 +249,18 @@ class CloudGoalPublisher {
 			  ros::Duration(10.0).sleep();
 			}
 			vector<cv::Point2f> roach_corners, img_corners;
-			tf::Stamped<tf::Pose> ll_corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker),
-								ul_corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
-								ur_corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
-								lr_corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
-			tf::Stamped<tf::Pose> tf_ll_corner1, tf_ul_corner2, tf_ur_corner3, tf_lr_corner4;
-			transform_listener.transformPose("usb_cam", ll_corner1, tf_ll_corner1);
-			transform_listener.transformPose("usb_cam", ul_corner2, tf_ul_corner2);
-			transform_listener.transformPose("usb_cam", ur_corner3, tf_ur_corner3);
-			transform_listener.transformPose("usb_cam", lr_corner4, tf_lr_corner4);
-			// get pixel coordinates of roach corners 
-			cv::Point2f img_pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
-						img_pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y()),
-						img_pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y()),
-						img_pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());
-			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
-			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
-			cout << "		Pixel-coords Roach corners:" << endl;
-			for(int i = 0; i < img_corners.size(); i++){
-				cout << "		(" << img_corners[i].x << ", " << img_corners[i].y << ")\n";
-			}
+
 			// real world measurements of roach corners in counter clockwise order
 			cv::Point2f pt1(0.0,0.0), 
-						pt2(0.0,0.1),
-						pt3(0.04,0.1),
-						pt4(0.04,0.0);
+						pt2(0.0,0.11),
+						pt3(0.07,0.11),
+						pt4(0.07,0.0);
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
+			// get corner points from camera image - also added in clockwise order
+			cv::Point2f img_pt1(0.0,CAMERA_IMG_H), img_pt2(0.0,0.0), img_pt3(CAMERA_IMG_W,0.0), img_pt4(CAMERA_IMG_W,CAMERA_IMG_H);
+			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
+			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
 			cout << "		Real-life Roach corners:" << endl;
 			for(int i = 0; i < roach_corners.size(); i++){
 				cout << "		(" << roach_corners[i].x << ", " << roach_corners[i].y << ")\n";
@@ -285,7 +285,7 @@ class CloudGoalPublisher {
 				}
 				cout << endl;
 			}
-			//---------publish marker array in rviz for boundary of FOV ----------//
+			//--------- publish marker array in rviz for boundary of FOV ----------//
 			double ll_data[3] = {0.0, CAMERA_IMG_H, 1.0};
 			double ul_data[3] = {0.0, 0.0, 1.0};
 			double ur_data[3] = {CAMERA_IMG_W, 0.0, 1.0};
@@ -326,13 +326,53 @@ class CloudGoalPublisher {
 		 */
 		void assignGoal(){
 			cout << "In assignGoal():" << endl;
+			double pdf[GOAL_GRID_W*GOAL_GRID_H];
+			double prev = 0;
+			int i = 0;
+			/*** print goal_grid_ ***/
+			cout << "goal grid: " << endl;
+			for(int row = 0 ; row < GOAL_GRID_H; row++){
+				for(int col = 0; col < GOAL_GRID_W; col++){
+					pdf[i] = prev+goal_grid_[row][col];
+					prev += goal_grid_[row][col];
+					i++;
+					cout << goal_grid_[row][col] << " ";
+				}
+				cout << endl;
+			}
+			cout << "pdf: " << endl;
+			for(int i = 0 ; i < GOAL_GRID_H*GOAL_GRID_W; i++){
+				cout  << pdf[i] << " ";
+			}
+			cout << endl;
 			srand(time(NULL));
-			// get random number between 0 and GOAL_GRID_H-1
-			int row = rand() % (GOAL_GRID_H); 
-			int col = rand() % (GOAL_GRID_W);
+			// get random number between 0.0 and 1.0
+			double randNum = randDouble(0.0, 1.0);
+			cout << "		randNum: " << randNum << endl;
+			int gridCell = 0; 
+			// find which grid cell was chosen
+			for(int i = 0; i < GOAL_GRID_H*GOAL_GRID_W; i++){
+				if(i == 0 && randNum <= pdf[i]){
+					gridCell = i+1;
+					break;
+				}else if(pdf[i-1] < randNum && randNum <= pdf[i]){
+					gridCell = i+1;
+					break;
+				}else if(i == GOAL_GRID_H*GOAL_GRID_W-1 && randNum > pdf[i]){
+					gridCell = i+1;
+					break;
+				}
+			}
+			cout << "		gridCell: " << randNum << endl;
+			// convert grid cell to row, col for indexing into image plane
+			int row = 0, col = 0;
+			int tmpCell = gridCell;
+			while(tmpCell > 8){
+				tmpCell -= GOAL_GRID_W;
+				row++;
+			}
+			col = tmpCell-1;
 			cout << "		row = " << row << ", col = " << col << endl;
-			// store that we have visited this location before
-			goal_grid_[row][col] += 1.0; 
 			// upper left corner of ROI
 			double rect_h = CAMERA_IMG_H/GOAL_GRID_H; double rect_w = CAMERA_IMG_W/GOAL_GRID_W;
 			double ul_corner_x = col*rect_h; double ul_corner_y = row*rect_w; 
@@ -418,8 +458,8 @@ class CloudGoalPublisher {
 				/*******************************************************/
 
 				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
-				for(double x = 0.05; x >= -0.05; x -= 0.02){
-					for(double y = -0.02; y <= 0.02; y += 0.02){
+				for(double x = -0.035; x <= 0.035; x += 0.02){
+					for(double y = -0.055; y <= 0.055; y += 0.02){
 						// get stamped pose wrt ar_marker
 						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
 						tf::Stamped<tf::Pose> transformed_corner;
@@ -473,6 +513,25 @@ int main(int argc, char** argv) {
 	ROS_ERROR("Not enough arguments! Usage example: cloud_goal_pub test_pcd.pcd 0.01 15000");
 	ros::shutdown();
   }
+
+  /****** GET HOMOGRAPHY POINTS FROM USER *******
+  cv::Mat frame;
+  // Capturing data from camera
+  // Caution: It requires webcam to be attached
+  cv::VideoCapture cap(0);
+  // you can also use
+  // cv::VideoCapture cap("video filename");
+  // to capture the frame from a video instead of webcam
+  if(!cap.isOpened())
+  	printf("No Camera Detected");
+  else{
+    cv::namedWindow("Webcam Video");
+    for(;;){
+        cap >> frame; // get a new frame from camera
+        cv::imshow("Webcam Video",frame);
+        if(cv::waitKey(30) >= 0) break;
+    }
+  }*/
 
   string pcd_filename = argv[1];
   float resolution = strtof(argv[2], NULL);  
