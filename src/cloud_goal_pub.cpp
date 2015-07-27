@@ -32,6 +32,8 @@
 
 #define GOAL_GRID_W 8
 #define GOAL_GRID_H 8
+#define CAMERA_IMG_W 640.0
+#define CAMERA_IMG_H 480.0
 
 using namespace std;
 
@@ -64,6 +66,8 @@ class CloudGoalPublisher {
 
 		geometry_msgs::Point goal_pt_;
 		std_msgs::Bool success_;
+		cv::Mat homography_;
+		cv::Mat homography_inverse_;
 
 		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
 		// stores within it how many times each goal has been assigned
@@ -211,160 +215,17 @@ class CloudGoalPublisher {
 			marker_array_pub_.publish(marker_array_msg);
 		}
 
-		/* Initially, set goal to be point forward the length of 1 roach body in its current pose.
-		 */
-		void setStartGoal(string ar_marker){
-			tf::TransformListener transform_listener;
-			cout << "In setStartGoal():" << endl;
-			cout << "		Publishing initial goal..." << endl;
-			tf::StampedTransform transform;
-			try{
-			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-			  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
-			  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
-			}
-			catch (tf::TransformException ex){
-			  ROS_ERROR("%s",ex.what());
-			  ros::Duration(10.0).sleep();
-			}
-			pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
-			cloud_pub_.publish(cloud_);(curr_pt.x, curr_pt.y, curr_pt.z, 0.0, 1.0, 0.0);
-
-			cout << "		Current location point: (" << curr_pt.x << ", " << curr_pt.y << ", " << curr_pt.z << ")\n";
-			goal_pt_.x = curr_pt.x + 2*ROACH_W;
-			goal_pt_.y = curr_pt.y + 2*ROACH_H;
-			goal_pt_.z = curr_pt.z;
-			goal_pub_.publish(goal_pt_);
-			cout << "		Set goal initial goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
-
-			cout << "		Publishing goal marker..." << endl;
-			publishMarker(goal_pt_, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
-		}
-
-		/* Given knowledge about the current point cloud, octree, and location of roach
-		 * updates the goal point to the least point-dense location in scene. 
-		 */
-		void updateGoal(pcl::PointXYZ curr_pt){
-			//TODO: WARNING THIS CODE IS NOT COMPLETE AND ISN'T CORRECT!
-			int depth = octree_search_->getTreeDepth();
-			cout << "In updateGoal(): " << endl;
-			cout << "		Tree Depth: " << depth << endl;
-
-			double min_x = 0.0, min_y = 0.0, min_z = 0.0, max_x = 0.0, max_y = 0.0, max_z = 0.0;
-			octree_search_->getBoundingBox(min_x, min_y, min_z, max_x, max_y, max_z);
-			cout << "		Bounding Box Min: (" << min_x << ", " << min_y << ", " << min_z << ")\n";		
-			cout << "		Bounding Box Max: (" << max_x << ", " << max_y << ", " << max_z << ")\n";	
-
-			double bound_width = abs(max_x - min_x);
-			double bound_length = abs(max_y - min_y);
-			double bound_height = abs(max_z - min_z);
-			cout << "		Bounding Box Width: " << bound_width << ", Length: " << bound_length << ", Height: " << bound_height << endl;	
-
-			/*** publish marker array for bound box corners ***/
-			vector<geometry_msgs::Point> pts;
-			geometry_msgs::Point pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt_mid_x, pt_mid_y, pt_mid_z;
-			pt1.x = min_x; pt1.y = min_y; pt1.z = min_z;
-			pt2.x = min_x+bound_width; pt2.y = min_y; pt2.z = min_z;
-			pt3.x = max_x; pt3.y = max_y; pt3.z = min_z;				
-			pt4.x = min_x; pt4.y = min_y+bound_height; pt4.z = min_z;
-
-			pt5.x = min_x; pt5.y = min_y; pt5.z = max_z;
-			pt6.x = min_x+bound_width; pt6.y = min_y; pt6.z = max_z;
-			pt7.x = min_x; pt7.y = min_y+bound_height; pt7.z = max_z;				
-			pt8.x = max_x; pt8.y = max_y; pt8.z = max_z;
-
-			pt_mid_x.x = max_x - (bound_width/2); pt_mid_x.y = max_y; pt_mid_x.z = max_z;
-			pt_mid_y.x = max_x; pt_mid_y.y = max_y - (bound_length/2); pt_mid_y.z = max_z;
-			pt_mid_z.x = max_x; pt_mid_z.y = max_y; pt_mid_z.z = max_z - (bound_height/2);
-
-			pts.push_back(pt1); pts.push_back(pt2);
-			pts.push_back(pt3); pts.push_back(pt4);
-			pts.push_back(pt5); pts.push_back(pt6);
-			
-			pts.push_back(pt_mid_x);			
-			pts.push_back(pt_mid_y);
-			pts.push_back(pt_mid_z);				
-
-			pts.push_back(pt7); pts.push_back(pt8);
-			publishMarkerArray(pts, 0.05, 0.0, 0.0, 1.0);
-			/******************************************/
-
-			int min_pts = INT_MAX;
-			Eigen::Vector3f max;
-			Eigen::Vector3f min;
-			// subdivide bounding box of octree into roach-sized grid
-			// search through each grid box for the min
-			/*for(double col = min_x; col < max_x; col += ROACH_W){ // start in upper left hand corner of bounding box base
-				for(double row = max_y; row > min_y; row -= ROACH_H){						
-					Eigen::Vector3f min_pt(col, row, min_z);
-					Eigen::Vector3f max_pt(col+ROACH_W, row-ROACH_H, min_z);
-					vector<int> k_indices;
-					// search for points within rectangular search area
-					int num_pts_in_box = octree_search_->boxSearch(min_pt, max_pt, k_indices);
-					//cout << "		Num points in box region: " << num_pts_in_box << endl;
-					if(num_pts_in_box < min_pts){
-						min = min_pt;
-						max = max_pt;
-						min_pts = num_pts_in_box;
-						cout << "		Found less dense region: density = " << min_pts << endl;
-					}
-				}
-			}*/	
-			double increment = abs(max_x - min_x)/4.0;
-			for(double col = min_x; col < max_x; col += increment){ // start in upper left hand corner of bounding box base
-				for(double row = max_y; row > min_y; row -= increment){						
-					Eigen::Vector3f min_pt(col+increment, row, min_z);
-					Eigen::Vector3f max_pt(col, row-increment, BOUND_BOX_SZ);
-					vector<int> k_indices;
-					// search for points within rectangular search area
-					int num_pts_in_box = octree_search_->boxSearch(min_pt, max_pt, k_indices);
-					//cout << "		Num points in box region: " << num_pts_in_box << endl;
-					if(num_pts_in_box < min_pts){
-						min = min_pt;
-						max = max_pt;
-						min_pts = num_pts_in_box;
-						cout << "		Found less dense region: density = " << min_pts << endl;
-					}
-				}
-			}
-			
-			vector<geometry_msgs::Point> roi_pts;
-			geometry_msgs::Point roi_pt1, roi_pt2;
-			roi_pt1.x = min[0]; roi_pt1.y = min[1]; roi_pt1.z = min[2];
-			roi_pt2.x = max[0]; roi_pt2.y = max[1]; roi_pt2.z = max[2];
-			roi_pts.push_back(roi_pt1);
-			roi_pts.push_back(roi_pt2);
-			publishMarkerArray(roi_pts, 0.05, 1.0, 1.0, 1.0);
-			// get center of region with the least points
-			double w = abs(max[0] - min[0]);					
-			double h = abs(max[1] - min[1]);
-			double mid_w = w/2.0;
-			double mid_h = h/2.0;
-			cout << "		ROI min_pt: (" << min[0] << ", " << min[1] << ", " << min[2] << ")\n";	
-			cout << "		ROI max_pt: (" << max[0] << ", " << max[1] << ", " << max[2] << ")\n";		
-			cout << "		ROI Width: " << w << ", Height: " << h << endl;
-			
-			// set goal point to be the center of the region with least points
-			goal_pt_.x = min[0] - mid_w; 
-			goal_pt_.y = max[1] + mid_h;
-			goal_pt_.z = min_z;
-			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
-			cout << "		Publishing goal marker..." << endl;
-					
-			publishMarker(goal_pt_, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
-		}
-
 		/* Computes homography matrix given current coordinates from the initial pose of the AR tag
 		 * (which we take to represent the ground plane under the robots feet)
 		 */
-		cv::Mat computeHomography(string ar_marker){
+		void computeHomography(string ar_marker){
+			cout << "In computeHomography():" << endl;
 			tf::TransformListener transform_listener;
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
 			  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-			  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
+			  cout << "		Looking up tf from map to " << ar_marker << "...\n";
 			  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
@@ -378,29 +239,117 @@ class CloudGoalPublisher {
 								corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
 								corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
 			tf::Stamped<tf::Pose> tf_corner1, tf_corner2, tf_corner3, tf_corner4;
-			transform_listener.transformPose("usb_cam", corner1, tf_corner1);
-			transform_listener.transformPose("usb_cam", corner2, tf_corner2);
-			transform_listener.transformPose("usb_cam", corner3, tf_corner3);
-			transform_listener.transformPose("usb_cam", corner4, tf_corner4);
-			cv::Point2f pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
+			transform_listener.transformPose("map", corner1, tf_corner1);
+			transform_listener.transformPose("map", corner2, tf_corner2);
+			transform_listener.transformPose("map", corner3, tf_corner3);
+			transform_listener.transformPose("map", corner4, tf_corner4);
+			/*cv::Point2f pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
 						pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y()),
 						pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y()),
-						pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());
+						pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());*/
+			cv::Point2f pt1(0.0,0.0), 
+						pt2(0.0,0.1),
+						pt3(0.04,0.1),
+						pt4(0.04,0.0);
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
+			cout << "		Roach corners:" << endl;
+			for(int i = 0; i < roach_corners.size(); i++){
+				cout << "		(" << roach_corners[i].x << ", " << roach_corners[i].y << ")\n";
+			}
 			// get corner points from camera image - also added in clockwise order
-			cv::Point2f img_pt1(0.0,480.0), img_pt2(0.0,0.0), img_pt3(640.0,0.0), img_pt4(640.0,480.0);
+			cv::Point2f img_pt1(0.0,CAMERA_IMG_H), img_pt2(0.0,0.0), img_pt3(CAMERA_IMG_W,0.0), img_pt4(CAMERA_IMG_W,CAMERA_IMG_H);
 			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
 			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
 		
-			cv::Mat H = cv::findHomography(roach_corners, img_corners, 0);	// note: 0 means we use regular method to compute homography matrix using all points
-			return H;
+			// note: 0 means we use regular method to compute homography matrix using all points
+			homography_ = cv::findHomography(roach_corners, img_corners, 0);	
+			homography_inverse_ = homography_.inv();	
+			cout << "		Printing Homography Matrix:" << endl;						
+			for(int i = 0; i < homography_.rows; i++){
+				cout << "		";
+				for(int j = 0; j < homography_.cols; j++){
+					cout << homography_.at<double>(i,j) << " ";
+				}
+				cout << endl;
+			}
+			cout << "		Printing Inverse Homography Matrix:" << endl;						
+			for(int i = 0; i < homography_inverse_.rows; i++){
+				cout << "		";
+				for(int j = 0; j < homography_inverse_.cols; j++){
+					cout << homography_inverse_.at<double>(i,j) << " ";
+				}
+				cout << endl;
+			}
+			//---------publish marker array in rviz for boundary of FOV ----------//
+			double ll_data[3] = {0.0, CAMERA_IMG_H, 1.0};
+			double ul_data[3] = {0.0, 0.0, 1.0};
+			double ur_data[3] = {CAMERA_IMG_W, 0.0, 1.0};
+			double lr_data[3] = {CAMERA_IMG_W, CAMERA_IMG_H, 1.0};
+			cv::Mat ll = cv::Mat(3,1, CV_64F, ll_data);
+			cv::Mat ul = cv::Mat(3,1, CV_64F, ul_data);
+			cv::Mat ur = cv::Mat(3,1, CV_64F, ur_data);
+			cv::Mat lr = cv::Mat(3,1, CV_64F, lr_data);
+			cv::Mat ll_result = homography_inverse_*ll;
+			cv::Mat ul_result = homography_inverse_*ul;
+			cv::Mat ur_result = homography_inverse_*ur;
+			cv::Mat lr_result = homography_inverse_*lr;
+			double ll_x = ll_result.at<double>(0,0)/ll_result.at<double>(2,0); double ll_y = ll_result.at<double>(1,0)/ll_result.at<double>(2,0);
+			double ul_x = ul_result.at<double>(0,0)/ul_result.at<double>(2,0); double ul_y = ul_result.at<double>(1,0)/ul_result.at<double>(2,0);
+			double ur_x = ur_result.at<double>(0,0)/ur_result.at<double>(2,0); double ur_y = ur_result.at<double>(1,0)/ur_result.at<double>(2,0);
+			double lr_x = lr_result.at<double>(0,0)/lr_result.at<double>(2,0); double lr_y = lr_result.at<double>(1,0)/lr_result.at<double>(2,0);
+			vector<geometry_msgs::Point> pts;
+			geometry_msgs::Point p1, p2, p3, p4;
+			p1.x = ll_x; p1.y = ll_y; p1.z = 0.0;
+			p2.x = ul_x; p2.y = ul_y; p2.z = 0.0;
+			p3.x = ur_x; p3.y = ur_y; p3.z = 0.0;
+			p4.x = lr_x; p4.y = lr_y; p4.z = 0.0;
+			cout << "		ll: (" << ll_x << ", " << ll_y << ")\n";
+			cout << "		ul: (" << ul_x << ", " << ul_y << ")\n";
+			cout << "		ur: (" << ur_x << ", " << ur_y << ")\n";
+			cout << "		lr: (" << lr_x << ", " << lr_y << ")\n";
+			pts.push_back(p1);
+			pts.push_back(p2);
+			pts.push_back(p3);
+			pts.push_back(p4);
+			publishMarkerArray(pts, 0.05, 0.0, 0.0, 1.0);
 		}
 		
+		/* Assigns the next goal location by dividing the camera image plane into GOAL_GRID_H*GOAL_GRID_W
+		 * grid rectangles, each with 1/GOAL_GRID_H*GOAL_GRID_W probability of being selected.
+		 * Uses homography matrix to go from the selected region in the camera image to real-life coordinates
+		 * in the exploration plane. 
+		 */
 		void assignGoal(){
+			cout << "In assignGoal():" << endl;
 			srand(time(NULL));
-			double gridRegion = rand() % (GOAL_GRID_W*GOAL_GRID_H)+ 1; // get random number between 1 and GOAL_GRID_W*GOAL_GRID_H
-			
+			// get random number between 0 and GOAL_GRID_H-1
+			int row = rand() % (GOAL_GRID_H); 
+			int col = rand() % (GOAL_GRID_W);
+			cout << "		row = " << row << ", col = " << col << endl;
+			// store that we have visited this location before
+			goal_grid_[row][col] += 1.0; 
+			// upper left corner of ROI
+			double rect_h = CAMERA_IMG_H/GOAL_GRID_H; double rect_w = CAMERA_IMG_W/GOAL_GRID_W;
+			double ul_corner_x = col*rect_h; double ul_corner_y = row*rect_w; 
+			// store center of ROI 
+			cv::Mat centroid(3,1,CV_64F);
+			centroid.at<double>(0,0) = ul_corner_x+(rect_w/2.0);
+			centroid.at<double>(1,0) = ul_corner_y+(rect_h/2.0);
+			centroid.at<double>(2,0) = 1;
+			cout << "		centroid: (" << centroid.at<double>(0,0) << ", " << centroid.at<double>(1,0) << ")\n";
+			// get real-world coordinates using homography inverse
+			cv::Mat result = homography_inverse_*centroid;
+			double x = result.at<double>(0,0)/result.at<double>(2,0);
+			double y = result.at<double>(1,0)/result.at<double>(2,0);
+			// set goal point
+			goal_pt_.x = x;
+			goal_pt_.y = y;
+			goal_pt_.z = 0.0;												//TODO: WHAT SHOULD THE Z-VALUE BE??? (treating 3d problem as 2d problem)
+			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
+			cout << "		Publishing goal marker..." << endl;
+			// publish goal marker for rviz visualization
+			publishMarker(goal_pt_, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
 		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
@@ -421,8 +370,8 @@ class CloudGoalPublisher {
 			ros::Rate loop_rate(3);
 
 			/*************** SET INITIAL GOAL FOR VELOCIROACH **************/
-			this->setStartGoal(ar_marker);
-			cv::Mat H = this->computeHomography(ar_marker);
+			this->computeHomography(ar_marker);
+			this->assignGoal();
 			/***************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
@@ -436,7 +385,7 @@ class CloudGoalPublisher {
 				try{
 				  ros::Time now = ros::Time::now();
 				  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-				  cout << "		Looking up tf from usb_cam to " << ar_marker << "...\n";
+				  cout << "		Looking up tf from map to " << ar_marker << "...\n";
 				  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
@@ -449,7 +398,6 @@ class CloudGoalPublisher {
 				if(success_.data){ // if roach reached goal
 					cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 					pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
-					cloud_pub_.publish(cloud_);(curr_pt.x, curr_pt.y, curr_pt.z, 0.0, 1.0, 0.0);
 					if(goal_pt_.x == -100 && goal_pt_.y == -100 && goal_pt_.z == -100){ 
 						// if have no goal set goal (or first pass through)
 						// set goal to be point forward the length of 1 roach body
@@ -457,8 +405,7 @@ class CloudGoalPublisher {
 						goal_pt_.y = curr_pt.y + ROACH_H;
 						goal_pt_.z = curr_pt.z;
 					}else{
-						// query octree for goal point based on density
-						this->updateGoal(curr_pt);
+						this->assignGoal();
 					}
 					goal_pub_.publish(goal_pt_);
 				}else{

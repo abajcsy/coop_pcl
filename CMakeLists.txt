@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros 
   pcl_conversions
   message_generation
+  OpenCV
 )
 
 
@@ -99,6 +100,7 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_executable(pcl_publisher src/pcl_publisher.cpp)
@@ -109,7 +111,7 @@ add_executable(roach_controller src/roach_controller.cpp)
 target_link_libraries(roach_controller ${catkin_LIBRARIES})
 
 add_executable(cloud_goal_pub src/cloud_goal_pub.cpp)
-target_link_libraries(cloud_goal_pub ${catkin_LIBRARIES})
+target_link_libraries(cloud_goal_pub ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 add_executable(roach_control_pub src/roach_control_pub.cpp)
 target_link_libraries(roach_control_pub ${catkin_LIBRARIES})
 
