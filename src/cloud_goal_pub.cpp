@@ -61,6 +61,8 @@ class CloudGoalPublisher {
 		ros::Publisher marker_array_pub_;	// publishes marker array to /visualization_marker_array
 		ros::Subscriber success_sub_;		// subcribes to /success from roach_control_pub.cpp
 
+		tf::TransformListener transform_listener;
+
 		PointCloud::Ptr cloud_;
 		OctreeSearch *octree_search_;
 
@@ -220,47 +222,49 @@ class CloudGoalPublisher {
 		 */
 		void computeHomography(string ar_marker){
 			cout << "In computeHomography():" << endl;
-			tf::TransformListener transform_listener;
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-			  cout << "		Looking up tf from map to " << ar_marker << "...\n";
-			  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
+			  transform_listener.waitForTransform(ar_marker, "usb_cam", now, ros::Duration(5.0));
+			  cout << "		Looking up tf from " << ar_marker << "to usb_cam...\n";
+			  transform_listener.lookupTransform(ar_marker, "usb_cam", ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
 			  ros::Duration(10.0).sleep();
 			}
 			vector<cv::Point2f> roach_corners, img_corners;
-			// get points from point cloud - should be added in clockwise order
-			tf::Stamped<tf::Pose> corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker),
-								corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
-								corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
-								corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
-			tf::Stamped<tf::Pose> tf_corner1, tf_corner2, tf_corner3, tf_corner4;
-			transform_listener.transformPose("map", corner1, tf_corner1);
-			transform_listener.transformPose("map", corner2, tf_corner2);
-			transform_listener.transformPose("map", corner3, tf_corner3);
-			transform_listener.transformPose("map", corner4, tf_corner4);
-			/*cv::Point2f pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
-						pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y()),
-						pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y()),
-						pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());*/
+			tf::Stamped<tf::Pose> ll_corner1(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, -0.05, 0.0)),ros::Time(0), ar_marker),
+								ul_corner2(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
+								ur_corner3(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, 0.05, 0.0)),ros::Time(0), ar_marker),
+								lr_corner4(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.02, -0.05, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> tf_ll_corner1, tf_ul_corner2, tf_ur_corner3, tf_lr_corner4;
+			transform_listener.transformPose("usb_cam", ll_corner1, tf_ll_corner1);
+			transform_listener.transformPose("usb_cam", ul_corner2, tf_ul_corner2);
+			transform_listener.transformPose("usb_cam", ur_corner3, tf_ur_corner3);
+			transform_listener.transformPose("usb_cam", lr_corner4, tf_lr_corner4);
+			// get pixel coordinates of roach corners 
+			cv::Point2f img_pt1(tf_corner1.getOrigin().x(),tf_corner1.getOrigin().y()), 
+						img_pt2(tf_corner2.getOrigin().x(),tf_corner2.getOrigin().y()),
+						img_pt3(tf_corner3.getOrigin().x(),tf_corner3.getOrigin().y()),
+						img_pt4(tf_corner4.getOrigin().x(),tf_corner4.getOrigin().y());
+			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
+			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
+			cout << "		Pixel-coords Roach corners:" << endl;
+			for(int i = 0; i < img_corners.size(); i++){
+				cout << "		(" << img_corners[i].x << ", " << img_corners[i].y << ")\n";
+			}
+			// real world measurements of roach corners in counter clockwise order
 			cv::Point2f pt1(0.0,0.0), 
 						pt2(0.0,0.1),
 						pt3(0.04,0.1),
 						pt4(0.04,0.0);
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
-			cout << "		Roach corners:" << endl;
+			cout << "		Real-life Roach corners:" << endl;
 			for(int i = 0; i < roach_corners.size(); i++){
 				cout << "		(" << roach_corners[i].x << ", " << roach_corners[i].y << ")\n";
 			}
-			// get corner points from camera image - also added in clockwise order
-			cv::Point2f img_pt1(0.0,CAMERA_IMG_H), img_pt2(0.0,0.0), img_pt3(CAMERA_IMG_W,0.0), img_pt4(CAMERA_IMG_W,CAMERA_IMG_H);
-			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
-			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
 		
 			// note: 0 means we use regular method to compute homography matrix using all points
 			homography_ = cv::findHomography(roach_corners, img_corners, 0);	
@@ -358,7 +362,6 @@ class CloudGoalPublisher {
 		 * the cloud_goal_publisher for correct synchronization. 
 		 */
 		void run(std::string pcd_filename){
-			tf::TransformListener transform_listener;
 			string ar_marker = "ar_marker_1"; 
 
 			int input = 'c';
