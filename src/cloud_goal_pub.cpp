@@ -33,8 +33,11 @@
 #define ROACH_W 0.07
 #define ROACH_H 0.11
 
+// divide field of view (FOV) of camera into 8x8 grid
 #define GOAL_GRID_W 8
 #define GOAL_GRID_H 8
+
+// store pixel dimensions of camera
 #define CAMERA_IMG_W 640.0
 #define CAMERA_IMG_H 480.0
 
