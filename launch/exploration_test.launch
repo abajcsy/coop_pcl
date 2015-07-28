@@ -48,4 +48,7 @@
 <!-- CONTROL VELOCIROACH 
 <node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> -->
 
+<!-- RUN RVIZ -->
+<node name="rviz" pkg="rviz" type="rviz" />
+
 </launch>

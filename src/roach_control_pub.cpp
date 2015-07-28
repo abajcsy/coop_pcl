@@ -24,7 +24,10 @@
 #include <coop_pcl/exploration_info.h>
 
 #define PI 3.14159265
-#define EPSILON 0.001
+
+// defines how close the roach needs to be to the goal to consider it having reached the goal
+// error margin defined in meters
+#define EPSILON 0.03			
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
@@ -48,8 +51,10 @@ class RoachController {
 		ros::Publisher success_pub_;		// publishes if succeeded to get to goal /success 
 		ros::Subscriber goal_sub_;			// subcribes to /goal from cloud_goal_pub.cpp
 		
-		geometry_msgs::Point goal_pt_;
-		std_msgs::Bool success_;
+		geometry_msgs::Point goal_pt_;		// stores goal location for roach to move to
+		std_msgs::Bool success_;			// stores if the roach was able to reach goal location
+
+		tf::TransformListener transform_listener;
 
 		/* Implements a non-blocking getchar() in Linux. Function modifying the terminal settings to 
 		 * disable input buffering. 
@@ -104,10 +109,79 @@ class RoachController {
 		 * goal point set by the cloud_goal_pub
 		 */
 		void explore() {
-			ros::Rate loop_rate(0.5);
+
+			// publish Twist message for linear and angular velocities
+			geometry_msgs::Twist base_cmd;
+
+			string robot_ar_marker = "ar_marker_1"; 
+
 			int i = 0;
+			double angular = 0.0, linear = 0.0;
+			ros::Rate loop_rate(0.5);
 			while(nh_.ok()){
-				if(i == 10){
+				cout << "ROACH_CONTROL_PUB: In explore():\n";
+				// get current location of roach
+				tf::StampedTransform path_transform;
+				try{
+				  ros::Time now = ros::Time::now();
+				  transform_listener.waitForTransform(robot_ar_marker, "usb_cam", now, ros::Duration(5.0));
+				  cout << "		Looking up tf from robot_ar_marker to map ...\n";
+				  transform_listener.lookupTransform(robot_ar_marker, "usb_cam", ros::Time(0), path_transform);
+				}
+				catch (tf::TransformException ex){
+				  ROS_ERROR("%s",ex.what());
+				  ros::Duration(1.0).sleep();
+				}
+				double currX = path_transform.getOrigin().x();											//TODO CHECK IF THESE COORDINATES ARE IN THE RIGHT FRAME W.R.T GOAL COORDS
+				double currY = path_transform.getOrigin().y();
+				double currZ = path_transform.getOrigin().z();
+				cout << "		currPt: (" << currX << ", " << currY << ", " << currZ << ")\n"; 
+				cout << "		goalPt: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n"; 
+				if(abs(currX - goal_pt_.x) <= EPSILON && abs(currY - goal_pt_.y) <= EPSILON){
+					// roach has reached the goal!
+					success_.data = true;
+					success_pub_.publish(success_);
+					// reset goal_pt
+					goal_pt_.x = -100;																	//TODO CHECK THIS BEHAVIOR IN REALITY
+					goal_pt_.y = -100;
+					goal_pt_.z = -100;
+					angular = 0.0;
+					linear = 0.0;	// don't move until next command
+					cout << "		REACHED GOAL!";
+				}else{
+					double xLoc = goal_pt_.x;															//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
+					double yLoc = goal_pt_.y;
+					angular = -atan2(yLoc,xLoc)/6.0;
+					linear = sqrt(pow(xLoc,2)+pow(yLoc,2));
+
+					// threshold velocities if too large
+					if(abs(angular) > 1.0){
+						cout << "		Thresholding angular: " << angular << endl;
+						if(angular < 0) 
+							angular = -0.7;
+						else
+							angular = 0.7;
+					}
+					if(abs(linear) > 1.0){
+						cout << "		Thresholding linear: " << linear << endl;
+						if(linear < 0) 
+							linear = -0.7;
+						else
+							linear = 0.7;
+					}
+					cout << "		Setting linear and angular velocity and publishing success_.data..." << endl;
+					base_cmd.linear.x = linear;   // move forward
+					base_cmd.angular.z = angular;   // move left or right
+					success_.data = false;
+					success_pub_.publish(success_);
+				}
+				cout << "		Publishing linear vel: " << linear << ", Angular vel: " << angular << endl;
+				// publish velocity commands to get roach towards goal
+				cmd_vel_pub_.publish(base_cmd);	
+				ros::spinOnce();
+				loop_rate.sleep();
+
+				/*if(i == 10){
 					success_.data = true;
 					success_pub_.publish(success_);
 					i = 0;
@@ -120,7 +194,7 @@ class RoachController {
 				}
 				cout << "i = " << i << endl;
 				ros::spinOnce();
-				loop_rate.sleep();
+				loop_rate.sleep();*/
 			}
 		}
 

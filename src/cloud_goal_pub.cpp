@@ -80,6 +80,9 @@ class CloudGoalPublisher {
 		cv::Mat homography_inverse_;		
 		cv::Mat P_;							// camera projection matrix (comes from camera_info topic)
 
+		// stores the lower-left, upper-left, upper-right, lower-right corners of the homography plane based on camera dimensions
+		vector<geometry_msgs::Point> camera_homography_pts_;	
+
 		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
 		// stores within it the probability of landing on that grid location
 		double goal_grid_[GOAL_GRID_H][GOAL_GRID_W]; 
@@ -182,7 +185,7 @@ class CloudGoalPublisher {
 		 */
 		void publishMarker(geometry_msgs::Point pt, double scaleX, double scaleY, double scaleZ, double r, double g, double b){
 			visualization_msgs::Marker marker;
-			marker.header.frame_id = "map";
+			marker.header.frame_id = "usb_cam";
 			marker.header.stamp = ros::Time();
 			marker.ns = "my_namespace";
 			marker.id = 0;
@@ -217,7 +220,7 @@ class CloudGoalPublisher {
 				double y = pts[i].y;
 				double z = pts[i].z;	
 
-				marker_array_msg.markers[i].header.frame_id = "map";
+				marker_array_msg.markers[i].header.frame_id = "usb_cam";
 				marker_array_msg.markers[i].header.stamp = ros::Time();
 				marker_array_msg.markers[i].ns = "my_namespace";
 				marker_array_msg.markers[i].id = i; 
@@ -335,35 +338,51 @@ class CloudGoalPublisher {
 			}
 
 			/************************* publish marker array in rviz for boundary of FOV *************************/
+			// pixel coordinates of usb_cam image
 			double ll_data[3] = {0.0, CAMERA_IMG_H, 1.0};
 			double ul_data[3] = {0.0, 0.0, 1.0};
 			double ur_data[3] = {CAMERA_IMG_W, 0.0, 1.0};
 			double lr_data[3] = {CAMERA_IMG_W, CAMERA_IMG_H, 1.0};
+			// convert to stupid opencv matrix
 			cv::Mat ll = cv::Mat(3,1, CV_64F, ll_data);
 			cv::Mat ul = cv::Mat(3,1, CV_64F, ul_data);
 			cv::Mat ur = cv::Mat(3,1, CV_64F, ur_data);
 			cv::Mat lr = cv::Mat(3,1, CV_64F, lr_data);
+			// apply H^(-1) to go from pixel to real-world coordinates
 			cv::Mat ll_result = homography_inverse_*ll;
 			cv::Mat ul_result = homography_inverse_*ul;
 			cv::Mat ur_result = homography_inverse_*ur;
 			cv::Mat lr_result = homography_inverse_*lr;
-			double ll_x = ll_result.at<double>(0,0)/ll_result.at<double>(2,0); double ll_y = ll_result.at<double>(1,0)/ll_result.at<double>(2,0);
+			// get (x,y) coordinates in real world for each corner of camera frame
+			double ll_x = ll_result.at<double>(0,0)/ll_result.at<double>(2,0); double ll_y = ll_result.at<double>(1,0)/ll_result.at<double>(2,0); 
 			double ul_x = ul_result.at<double>(0,0)/ul_result.at<double>(2,0); double ul_y = ul_result.at<double>(1,0)/ul_result.at<double>(2,0);
 			double ur_x = ur_result.at<double>(0,0)/ur_result.at<double>(2,0); double ur_y = ur_result.at<double>(1,0)/ur_result.at<double>(2,0);
 			double lr_x = lr_result.at<double>(0,0)/lr_result.at<double>(2,0); double lr_y = lr_result.at<double>(1,0)/lr_result.at<double>(2,0);
+			// get z value by transforming from homography plane points to usb_cam
+			tf::Stamped<tf::Pose> ll_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(ll_x, ll_y, 0.0)),ros::Time(0), ar_marker),
+			ul_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(ul_x, ul_y, 0.0)),ros::Time(0), ar_marker),
+			ur_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(ur_x, ur_y, 0.0)),ros::Time(0), ar_marker),
+			lr_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(lr_x, lr_y, 0.0)),ros::Time(0), ar_marker);
+			transform_listener.transformPose("usb_cam", ll_cam, tf_ll_corner);
+			transform_listener.transformPose("usb_cam", ul_cam, tf_ul_corner);
+			transform_listener.transformPose("usb_cam", ur_cam, tf_ur_corner);
+			transform_listener.transformPose("usb_cam", lr_cam, tf_lr_corner);
+			// convert to vector<geometry_msgs::Point> for RVIZ 
 			vector<geometry_msgs::Point> pts;
 			geometry_msgs::Point p1, p2, p3, p4;
-			p1.x = ll_x; p1.y = ll_y; p1.z = 0.0;
-			p2.x = ul_x; p2.y = ul_y; p2.z = 0.0;
-			p3.x = ur_x; p3.y = ur_y; p3.z = 0.0;
-			p4.x = lr_x; p4.y = lr_y; p4.z = 0.0;
-			cout << "		ll corner of camera in real-world: (" << ll_x << ", " << ll_y << ")\n";
-			cout << "		ul corner of camera in real-world: (" << ul_x << ", " << ul_y << ")\n";
-			cout << "		ur corner of camera in real-world: (" << ur_x << ", " << ur_y << ")\n";
-			cout << "		lr corner of camera in real-world: (" << lr_x << ", " << lr_y << ")\n";
+			p1.x = tf_ll_corner.getOrigin().x(); p1.y = tf_ll_corner.getOrigin().y(); p1.z = tf_ll_corner.getOrigin().z();		
+			p2.x = tf_ul_corner.getOrigin().x(); p2.y = tf_ul_corner.getOrigin().y(); p2.z = tf_ul_corner.getOrigin().z();
+			p3.x = tf_ur_corner.getOrigin().x(); p3.y = tf_ur_corner.getOrigin().y(); p3.z = tf_ur_corner.getOrigin().z();
+			p4.x = tf_lr_corner.getOrigin().x(); p4.y = tf_lr_corner.getOrigin().y(); p4.z = tf_lr_corner.getOrigin().z();
+			cout << "		ll corner of camera in real-world: (" << p1.x << ", " << p1.y << ", " << p1.z << ")\n";
+			cout << "		ul corner of camera in real-world: (" << p2.x << ", " << p2.y << ", " << p2.z << ")\n";
+			cout << "		ur corner of camera in real-world: (" << p3.x << ", " << p3.y << ", " << p3.z << ")\n";
+			cout << "		lr corner of camera in real-world: (" << p4.x << ", " << p4.y << ", " << p4.z << ")\n";
 			pts.push_back(p1); pts.push_back(p2);
 			pts.push_back(p3); pts.push_back(p4);
-			publishMarkerArray(pts, 0.05, 0.0, 0.0, 1.0);
+			// store points for later
+			camera_homography_pts_ = pts;
+			publishMarkerArray(pts, 0.03, 0.0, 0.0, 1.0);
 			/***************************************************************************************************/
 		}
 		
@@ -372,7 +391,7 @@ class CloudGoalPublisher {
 		 * Uses homography matrix to go from the selected region in the camera image to real-life coordinates
 		 * in the exploration plane. 
 		 */
-		void assignGoal(){
+		void assignGoal(string ar_marker){
 			cout << "In assignGoal():" << endl;
 			double pdf[GOAL_GRID_W*GOAL_GRID_H];
 			double prev = 0;
@@ -430,18 +449,22 @@ class CloudGoalPublisher {
 			centroid.at<double>(1,0) = ul_corner_y+(rect_h/2.0);
 			centroid.at<double>(2,0) = 1;
 			cout << "		centroid: (" << centroid.at<double>(0,0) << ", " << centroid.at<double>(1,0) << ")\n";
-			// get real-world coordinates using homography inverse
+			// get real-world (x,y) coordinates using homography inverse
 			cv::Mat result = homography_inverse_*centroid;
 			double x = result.at<double>(0,0)/result.at<double>(2,0);
 			double y = result.at<double>(1,0)/result.at<double>(2,0);
+			// get z value by transforming from homography plane points to usb_cam
+			tf::Stamped<tf::Pose> cam_pt(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> tf_cam_pt;
+			transform_listener.transformPose("usb_cam", cam_pt, tf_cam_pt);
 			// set goal point
-			goal_pt_.x = x;
-			goal_pt_.y = y;
-			goal_pt_.z = 0.0;												//TODO: WHAT SHOULD THE Z-VALUE BE??? (treating 3d problem as 2d problem)
+			goal_pt_.x = tf_cam_pt.getOrigin().x();
+			goal_pt_.y = tf_cam_pt.getOrigin().y();
+			goal_pt_.z = tf_cam_pt.getOrigin().z();												//TODO: WHAT SHOULD THE Z-VALUE BE??? (treating 3d problem as 2d problem)
 			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
 			cout << "		Publishing goal marker..." << endl;
 			// publish goal marker for rviz visualization
-			publishMarker(goal_pt_, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
+			publishMarker(goal_pt_, 0.04, 0.04, 0.04, 0.0, 1.0, 0.0);
 		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
@@ -462,7 +485,7 @@ class CloudGoalPublisher {
 
 			/*************** SET INITIAL GOAL FOR VELOCIROACH **************/
 			this->computeHomography(ar_marker);
-			this->assignGoal();
+			this->assignGoal(ar_marker);
 			/***************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
@@ -470,13 +493,13 @@ class CloudGoalPublisher {
 				if (input == 'q'){
 					break;
 				}
-				cout << "In run():" << endl;
+				//cout << "In run():" << endl;
 				/*********** GET TF FROM MAP TO AR_MARKER ***********/
 				tf::StampedTransform transform;
 				try{
 				  ros::Time now = ros::Time::now();
 				  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-				  cout << "		Looking up tf from map to " << ar_marker << "...\n";
+				 // cout << "		Looking up tf from map to " << ar_marker << "...\n";
 				  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
 				}
 				catch (tf::TransformException ex){
@@ -489,10 +512,10 @@ class CloudGoalPublisher {
 				if(success_.data){ // if roach reached goal
 					cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 					pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
-					this->assignGoal();
+					this->assignGoal(ar_marker);
 					goal_pub_.publish(goal_pt_);
 				}else{
-					cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
+					//cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
 					goal_pub_.publish(goal_pt_);
 				}
 				/*******************************************************/
@@ -501,7 +524,7 @@ class CloudGoalPublisher {
 				for(double x = -0.035; x <= 0.035; x += 0.02){
 					for(double y = -0.055; y <= 0.055; y += 0.02){
 						// get stamped pose wrt ar_marker
-						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, 0.0)),ros::Time(0), ar_marker);
+						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.02)),ros::Time(0), ar_marker);
 						tf::Stamped<tf::Pose> transformed_corner;
 						// transform pose wrt usb_cam
 						transform_listener.transformPose("usb_cam", corner, transformed_corner);
@@ -521,10 +544,10 @@ class CloudGoalPublisher {
 						num_pts+=1;
 					}
 				}
-				cout << "		Publishing point cloud.\n";
+				//cout << "		Publishing point cloud.\n";
 				cloud_->header.stamp = ros::Time::now().toNSec();
 				cloud_pub_.publish(cloud_);
-				cout << "		Finished publishing point cloud..." << endl;
+				//cout << "		Finished publishing point cloud..." << endl;
 				/*********************************************************/
 
 				ros::spinOnce();
