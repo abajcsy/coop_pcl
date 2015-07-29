@@ -21,20 +21,14 @@
     <param name="autosize" value="true" />
 </node>
 
-<!-- TRACK AR TAGS -->
-<arg name="marker_size" default="3.5" /> 
-<arg name="max_new_marker_error" default="0.08" />
-<arg name="max_track_error" default="0.2" />
+<!-- TRACK AR TAG BUNDLES RELATIVE TO MASTER TAG ON TOP OF ROBOT -->
+<arg name="bundle_markers" value="ar_marker_0 ar_marker_1 ar_marker_2 ar_marker_3 ar_marker_4" />
+<include ns="usb_cam" file="$(find experiment_calib)/launch/ar_track.launch">
+    <arg name="camera" value="/usb_cam" />
+  </include>
+<node name="filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg bundle_markers)" />
+<node name="tracker" pkg="experiment_calib" type="track_bundle.py" args="usb_cam $(find experiment_calib)/data/roach_hat_calib_NEW.bag" output="screen" />
 
-<arg name="cam_image_topic" default="/usb_cam/image_raw" />
-<arg name="cam_info_topic" default="/usb_cam/camera_info" />
-
-<arg name="output_frame" default="/usb_cam" />
-<arg name="bundle_files" default="$(find coop_pcl)/launch/ar_cube_bundle.xml" /> 
-
-<!-- NOTE: used to be type="individualMarkersNoKinect", but want AR cube on VelociRoACH to be bundle -->
-<node name="ar_track_alvar" pkg="ar_track_alvar" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg cam_image_topic) $(arg cam_info_topic) $(arg output_frame) $(arg bundle_files)" />
- 
 <!-- GENERATE POINT CLOUD FROM AR TAGS -->
 <!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
 <arg name="pcd_file" default="NULL"/>			
@@ -45,8 +39,8 @@
 <!-- PUBLISH TWIST MESSAGE FOR ROBOT WALK -->
 <node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" /> 
 
-<!-- CONTROL VELOCIROACH 
-<node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> -->
+<!-- CONTROL VELOCIROACH -->
+<node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> 
 
 <!-- RUN RVIZ -->
 <node name="rviz" pkg="rviz" type="rviz" />

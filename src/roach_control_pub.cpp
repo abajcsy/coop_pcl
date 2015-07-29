@@ -27,7 +27,7 @@
 
 // defines how close the roach needs to be to the goal to consider it having reached the goal
 // error margin defined in meters
-#define EPSILON 0.03			
+#define EPSILON 0.04			
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
@@ -113,7 +113,7 @@ class RoachController {
 			// publish Twist message for linear and angular velocities
 			geometry_msgs::Twist base_cmd;
 
-			string robot_ar_marker = "ar_marker_1"; 
+			string robot_ar_marker = "ar_marker_0_bundle"; 
 
 			int i = 0;
 			double angular = 0.0, linear = 0.0;
@@ -124,15 +124,15 @@ class RoachController {
 				tf::StampedTransform path_transform;
 				try{
 				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform(robot_ar_marker, "usb_cam", now, ros::Duration(5.0));
+				  transform_listener.waitForTransform("usb_cam", robot_ar_marker, now, ros::Duration(5.0));
 				  cout << "		Looking up tf from robot_ar_marker to map ...\n";
-				  transform_listener.lookupTransform(robot_ar_marker, "usb_cam", ros::Time(0), path_transform);
+				  transform_listener.lookupTransform("usb_cam", robot_ar_marker, ros::Time(0), path_transform);
 				}
 				catch (tf::TransformException ex){
 				  ROS_ERROR("%s",ex.what());
 				  ros::Duration(1.0).sleep();
 				}
-				double currX = path_transform.getOrigin().x();											//TODO CHECK IF THESE COORDINATES ARE IN THE RIGHT FRAME W.R.T GOAL COORDS
+				double currX = path_transform.getOrigin().x();											
 				double currY = path_transform.getOrigin().y();
 				double currZ = path_transform.getOrigin().z();
 				cout << "		currPt: (" << currX << ", " << currY << ", " << currZ << ")\n"; 
@@ -148,11 +148,12 @@ class RoachController {
 					angular = 0.0;
 					linear = 0.0;	// don't move until next command
 					cout << "		REACHED GOAL!";
-				}else{
-					double xLoc = goal_pt_.x;															//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
-					double yLoc = goal_pt_.y;
-					angular = -atan2(yLoc,xLoc)/6.0;
-					linear = sqrt(pow(xLoc,2)+pow(yLoc,2));
+				}else{																					//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
+					double goalXLoc = goal_pt_.x;
+					double goalYLoc = goal_pt_.y;
+
+					angular = atan2(goalYLoc,goalXLoc) - atan2(currY,currX); //-atan2(yLoc,xLoc)/4.0;
+					linear = sqrt(pow(goalXLoc-currX,2)+pow(goalYLoc-currY,2));
 
 					// threshold velocities if too large
 					if(abs(angular) > 1.0){

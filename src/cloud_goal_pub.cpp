@@ -285,10 +285,10 @@ class CloudGoalPublisher {
 
 			/*************************** get roach corners in the usb_cam frame *********************************/
 			/* (assumption is that the ar_marker is lying on its back with z pointing upwards, x to the right and y forward)  */
-			tf::Stamped<tf::Pose> ll_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.035, -0.055, 0.0)),ros::Time(0), ar_marker),
-					ul_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.035, 0.055, 0.0)),ros::Time(0), ar_marker),
-					ur_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.035, 0.055, 0.0)),ros::Time(0), ar_marker),
-					lr_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.035, -0.055, 0.0)),ros::Time(0), ar_marker);
+			tf::Stamped<tf::Pose> ll_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.055,-0.035, -0.08)),ros::Time(0), ar_marker),
+					ul_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.055, -0.035, -0.08)),ros::Time(0), ar_marker),
+					ur_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.055, 0.035, -0.08)),ros::Time(0), ar_marker),
+					lr_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(-0.055, 0.035, -0.08)),ros::Time(0), ar_marker);
 			tf::Stamped<tf::Pose> tf_ll_corner, tf_ul_corner, tf_ur_corner, tf_lr_corner;
 			transform_listener.transformPose("usb_cam", ll_corner, tf_ll_corner);
 			transform_listener.transformPose("usb_cam", ul_corner, tf_ul_corner);
@@ -312,8 +312,8 @@ class CloudGoalPublisher {
 						img_pt2(trans_ul_xyz1.at<double>(0,0)/trans_ul_xyz1.at<double>(2,0), trans_ul_xyz1.at<double>(1,0)/trans_ul_xyz1.at<double>(2,0)),
 						img_pt3(trans_ur_xyz1.at<double>(0,0)/trans_ur_xyz1.at<double>(2,0), trans_ur_xyz1.at<double>(1,0)/trans_ur_xyz1.at<double>(2,0)),
 						img_pt4(trans_lr_xyz1.at<double>(0,0)/trans_lr_xyz1.at<double>(2,0), trans_lr_xyz1.at<double>(1,0)/trans_lr_xyz1.at<double>(2,0));
-			img_corners.push_back(img_pt1); img_corners.push_back(img_pt2);
-			img_corners.push_back(img_pt3); img_corners.push_back(img_pt4);
+			img_corners.push_back(img_pt4); img_corners.push_back(img_pt1);
+			img_corners.push_back(img_pt2); img_corners.push_back(img_pt3);
 
 			cout << "		Pixel-coords Roach corners:" << endl;
 			for(int i = 0; i < img_corners.size(); i++){
@@ -358,6 +358,10 @@ class CloudGoalPublisher {
 			double ul_x = ul_result.at<double>(0,0)/ul_result.at<double>(2,0); double ul_y = ul_result.at<double>(1,0)/ul_result.at<double>(2,0);
 			double ur_x = ur_result.at<double>(0,0)/ur_result.at<double>(2,0); double ur_y = ur_result.at<double>(1,0)/ur_result.at<double>(2,0);
 			double lr_x = lr_result.at<double>(0,0)/lr_result.at<double>(2,0); double lr_y = lr_result.at<double>(1,0)/lr_result.at<double>(2,0);
+			cout << "		ll corner of camera in homography: (" << ll_x << ", " << ll_y << ")\n";
+			cout << "		ul corner of camera in homography: (" << ul_x << ", " << ul_y << ")\n";
+			cout << "		ur corner of camera in homography: (" << ur_x << ", " << ur_y << ")\n";
+			cout << "		lr corner of camera in homography: (" << lr_x << ", " << lr_y << ")\n";
 			// get z value by transforming from homography plane points to usb_cam
 			tf::Stamped<tf::Pose> ll_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(ll_x, ll_y, 0.0)),ros::Time(0), ar_marker),
 			ul_cam(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(ul_x, ul_y, 0.0)),ros::Time(0), ar_marker),
@@ -374,15 +378,15 @@ class CloudGoalPublisher {
 			p2.x = tf_ul_corner.getOrigin().x(); p2.y = tf_ul_corner.getOrigin().y(); p2.z = tf_ul_corner.getOrigin().z();
 			p3.x = tf_ur_corner.getOrigin().x(); p3.y = tf_ur_corner.getOrigin().y(); p3.z = tf_ur_corner.getOrigin().z();
 			p4.x = tf_lr_corner.getOrigin().x(); p4.y = tf_lr_corner.getOrigin().y(); p4.z = tf_lr_corner.getOrigin().z();
-			cout << "		ll corner of camera in real-world: (" << p1.x << ", " << p1.y << ", " << p1.z << ")\n";
-			cout << "		ul corner of camera in real-world: (" << p2.x << ", " << p2.y << ", " << p2.z << ")\n";
-			cout << "		ur corner of camera in real-world: (" << p3.x << ", " << p3.y << ", " << p3.z << ")\n";
-			cout << "		lr corner of camera in real-world: (" << p4.x << ", " << p4.y << ", " << p4.z << ")\n";
+			cout << "		ll corner of camera in usb_cam: (" << p1.x << ", " << p1.y << ", " << p1.z << ")\n";
+			cout << "		ul corner of camera in usb_cam: (" << p2.x << ", " << p2.y << ", " << p2.z << ")\n";
+			cout << "		ur corner of camera in usb_cam: (" << p3.x << ", " << p3.y << ", " << p3.z << ")\n";
+			cout << "		lr corner of camera in usb_cam: (" << p4.x << ", " << p4.y << ", " << p4.z << ")\n";
 			pts.push_back(p1); pts.push_back(p2);
 			pts.push_back(p3); pts.push_back(p4);
 			// store points for later
 			camera_homography_pts_ = pts;
-			publishMarkerArray(pts, 0.03, 0.0, 0.0, 1.0);
+			publishMarkerArray(pts, 0.02, 0.0, 0.0, 1.0);
 			/***************************************************************************************************/
 		}
 		
@@ -430,7 +434,7 @@ class CloudGoalPublisher {
 					break;
 				}
 			}
-			cout << "		gridCell: " << randNum << endl;
+			cout << "		gridCell: " << gridCell << endl;
 			// convert grid cell to row, col for indexing into image plane
 			int row = 0, col = 0;
 			int tmpCell = gridCell;
@@ -460,11 +464,11 @@ class CloudGoalPublisher {
 			// set goal point
 			goal_pt_.x = tf_cam_pt.getOrigin().x();
 			goal_pt_.y = tf_cam_pt.getOrigin().y();
-			goal_pt_.z = tf_cam_pt.getOrigin().z();												//TODO: WHAT SHOULD THE Z-VALUE BE??? (treating 3d problem as 2d problem)
+			goal_pt_.z = tf_cam_pt.getOrigin().z();												
 			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
 			cout << "		Publishing goal marker..." << endl;
 			// publish goal marker for rviz visualization
-			publishMarker(goal_pt_, 0.04, 0.04, 0.04, 0.0, 1.0, 0.0);
+			publishMarker(goal_pt_, 0.04, 0.04, 0.04, 0.0, 1.0, 0.0);	
 		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
@@ -473,7 +477,7 @@ class CloudGoalPublisher {
 		 * the cloud_goal_publisher for correct synchronization. 
 		 */
 		void run(std::string pcd_filename){
-			string ar_marker = "ar_marker_1"; 
+			string ar_marker = "ar_marker_0_bundle"; 
 
 			int input = 'c';
 			int num_pts = 0;
@@ -493,25 +497,11 @@ class CloudGoalPublisher {
 				if (input == 'q'){
 					break;
 				}
-				//cout << "In run():" << endl;
-				/*********** GET TF FROM MAP TO AR_MARKER ***********/
-				tf::StampedTransform transform;
-				try{
-				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform("map", ar_marker, now, ros::Duration(5.0));
-				 // cout << "		Looking up tf from map to " << ar_marker << "...\n";
-				  transform_listener.lookupTransform("map", ar_marker, ros::Time(0), transform);
-				}
-				catch (tf::TransformException ex){
-				  ROS_ERROR("%s",ex.what());
-				  ros::Duration(10.0).sleep();
-				}
-				/*******************************************************/
+				cout << "In run():" << endl;
 
 				/*************** GET GOAL FOR VELOCIROACH **************/
-				if(success_.data){ // if roach reached goal
+				if(success_.data && goal_pt_.x == -100 && goal_pt_.y == -100 && goal_pt_.x == -100){ // if roach reached goal
 					cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
-					pcl::PointXYZ curr_pt(transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
 					this->assignGoal(ar_marker);
 					goal_pub_.publish(goal_pt_);
 				}else{
@@ -521,10 +511,10 @@ class CloudGoalPublisher {
 				/*******************************************************/
 
 				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
-				for(double x = -0.035; x <= 0.035; x += 0.02){
-					for(double y = -0.055; y <= 0.055; y += 0.02){
-						// get stamped pose wrt ar_marker
-						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.02)),ros::Time(0), ar_marker);
+				for(double x = -0.055; x <= 0.055; x += 0.02){
+					for(double y = -0.035; y <= 0.035; y += 0.02){
+						// get stamped pose wrt ar_marker (note: -0.08 is the z-offset for the base of the roach wrt the top ar marker)
+						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.08)),ros::Time(0), ar_marker);
 						tf::Stamped<tf::Pose> transformed_corner;
 						// transform pose wrt usb_cam
 						transform_listener.transformPose("usb_cam", corner, transformed_corner);
