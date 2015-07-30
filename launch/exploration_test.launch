@@ -36,13 +36,13 @@
 <arg name="resolution" default="0.005" /> 
 <node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
+<!-- RUN RVIZ -->
+<node name="rviz" pkg="rviz" type="rviz" />
+
 <!-- PUBLISH TWIST MESSAGE FOR ROBOT WALK -->
 <node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" /> 
 
 <!-- CONTROL VELOCIROACH -->
 <node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> 
-
-<!-- RUN RVIZ -->
-<node name="rviz" pkg="rviz" type="rviz" />
 
 </launch>
