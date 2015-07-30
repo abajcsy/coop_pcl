@@ -169,14 +169,6 @@ class RoachController {
 				// unit vector in direction of y (the head of the roach)		
 				tf::Vector3 unit_y(0.0, 1.0, 0.0);
 
-				// Transform ARTag rotation from quaternion to yaw
-				//tf::Matrix3x3 m(path_transform.getRotation());
-				/*tf::Matrix3x3 R(1,0,0, 0,0,1, 0,1,0);
-				tf::Matrix3x3 F;
-				F=R*m*R;
-				double roll, pitch, yaw;
-				m.getRPY(roll, pitch, yaw);*/
-
 				// Extract planar position coordinates
     			double Xn= path_transform.getOrigin().x();
    				double Yn= path_transform.getOrigin().y();
