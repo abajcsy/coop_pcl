@@ -24,9 +24,9 @@ def Rater():
       sumDelT += delT
       sumSam += 1
       avDelT= (TimB-Begin)/sumSam
-      print("ID: %s"%det.child_frame_id + ", delT: %d" % delT.secs + ".%d " % delT.nsecs)
-      print("sum = %d" % sumDelT.secs + ".%d " % sumDelT.nsecs)
-      print("#samples = %d" % sumSam + ", average delT = %d" % avDelT.secs + ".%d " % delT.nsecs)
+      print("ID: %s"%det.child_frame_id + ", delT: %d" % delT.secs + ".%9.f " % delT.nsecs)
+      print("sum = %d" % sumDelT.secs + ".%9.f " % sumDelT.nsecs)
+      print("#samples = %d" % sumSam + ", average delT = %d" % avDelT.secs + ".%9.f " % delT.nsecs)
       TimA=TimB
   #rospy.Subscriber('/tag_detections',AprilTagDetectionArray, callback)
   rospy.Subscriber('/tf',TFMessage, callback)
