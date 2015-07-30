@@ -321,10 +321,8 @@ class CloudGoalPublisher {
 
 			/*************************** get roach corners in the usb_cam frame *********************************/
 			/* (assumption is that the ar_marker is lying on its back with z pointing upwards, x to the right and y forward)  */
-			tf::Vector3 ll(-0.035, -0.055, -0.08), ul(-0.035, 0.055, -0.08),
-						ur(0.035, 0.055, -0.08), lr(0.035, -0.055, -0.08);
-			ll = rotateZ(ll, 90.0); ul = rotateZ(ul, 90.0);
-			ur = rotateZ(ur, 90.0); lr = rotateZ(lr, 90.0);
+			tf::Vector3 ll(-0.055, 0.035, -0.08), ul(0.055, 0.035, -0.08),
+						ur(0.055, -0.035, -0.08), lr(-0.055, -0.035, -0.08);
 			cout << "		ll roach rotated: (" << ll.getX() << ", " << ll.getY() << ", " << ll.getZ() << ")\n";
 			cout << "		ul roach rotated: (" << ul.getX() << ", " << ul.getY() << ", " << ul.getZ() << ")\n";
 			cout << "		ur roach rotated: (" << ur.getX() << ", " << ur.getY() << ", " << ur.getZ() << ")\n";
@@ -567,7 +565,7 @@ class CloudGoalPublisher {
 			// get z value by transforming from homography plane points to usb_cam
 			tf::Vector3 goal_vec(x, y, -0.08);
 			goal_vec = rotateZ(goal_vec, 90.0);
-			tf::Stamped<tf::Pose> cam_pt(tf::Pose(tf::Quaternion(0, 0, 0, 1), goal_vec),ros::Time(0), ar_marker);		//TODO PUTTNIG AR_MARKER AS FRAME IS PROBLEM
+			tf::Stamped<tf::Pose> cam_pt(tf::Pose(tf::Quaternion(0, 0, 0, 1), goal_vec),ros::Time(0), ar_marker);	
 			tf::Stamped<tf::Pose> tf_cam_pt;
 			transform_listener.transformPose("usb_cam", cam_pt, tf_cam_pt);
 
@@ -588,29 +586,28 @@ class CloudGoalPublisher {
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform(ar_marker, "usb_cam", now, ros::Duration(5.0));
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
 			  //cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
-			  transform_listener.lookupTransform(ar_marker, "usb_cam", ros::Time(0), transform);
+			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
 			  ros::Duration(10.0).sleep();
 			}
 
-			tf::Vector3 ll(-0.035, -0.055, -0.08);
-			ll = rotateZ(ll, 90.0); 
+			tf::Vector3 ll(-0.055, 0.035, -0.08);
 			tf::Stamped<tf::Pose> ll_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), ll), ros::Time(0), ar_marker);
 			tf::Stamped<tf::Pose> tf_ll_corner;
 			// transform lower left hand point of roach from ar_marker to usb_cam frame
-			transform_listener.transformPose("usb_cam", ll_corner, tf_ll_corner);
+			//transform_listener.transformPose("usb_cam", ll_corner, tf_ll_corner);
 
 			// publish homography transform
 			tf::Transform hom_transform;
 			// use lower-left-hand corner of roach in usb_cam frame for translation vector
-			hom_transform.setOrigin(tf::Vector3(tf_ll_corner.getOrigin().x(), tf_ll_corner.getOrigin().y(), tf_ll_corner.getOrigin().z()));
+			hom_transform.setOrigin(tf::Vector3(ll_corner.getOrigin().x(), ll_corner.getOrigin().y(), ll_corner.getOrigin().z()));
 			// use quaternion of ar_marker by looking up transform from ar_marker to usb_cam
-			hom_transform.setRotation(transform.getRotation());
-			return hom_transform;
+			hom_transform.setRotation(tf::Quaternion(0, 0, 0, 1));
+			return ll_corner;
 		}
 
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
@@ -641,7 +638,7 @@ class CloudGoalPublisher {
 				}
 				cout << "Broadcasting homography tf..." << endl;
 				// broadcast homography transform with parent usb_cam
-				homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), "usb_cam", "homography"));
+				homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography"));
 				// publish FOV of camera 
 				this->publishCamCloud("homography", "usb_cam");
 
