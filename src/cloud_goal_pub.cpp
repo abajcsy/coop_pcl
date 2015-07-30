@@ -156,7 +156,7 @@ class CloudGoalPublisher {
 
 			PointCloud::Ptr hom_cloud(new PointCloud); 	
 			hom_cloud_ = hom_cloud;															
-			hom_cloud_->header.frame_id = "homography";
+			hom_cloud_->header.frame_id = "homography_plane";
 			hom_cloud_->height = 1;
 			hom_cloud_->width = width; 
 			hom_cloud_->points.resize(hom_cloud_->width * hom_cloud_->height);
@@ -210,7 +210,7 @@ class CloudGoalPublisher {
 		 */
 		void publishGoalMarker(geometry_msgs::Point pt, double scaleX, double scaleY, double scaleZ, double r, double g, double b){
 			visualization_msgs::Marker marker;
-			marker.header.frame_id = "homography";
+			marker.header.frame_id = "homography_plane";
 			marker.header.stamp = ros::Time();
 			marker.ns = "my_namespace";
 			marker.id = 0;
@@ -556,7 +556,10 @@ class CloudGoalPublisher {
 
 			/*************** SET UP HOMOGRAPHY & SET INITIAL GOAL FOR VELOCIROACH **************/
 			computeHomography(ar_marker);
-			static tf::Transform hom_transform = getHomographyTransform(ar_marker);
+			tf::Transform hom_transform; 
+			tf::StampedTransform usb_hom_transform;
+			bool set_transform = false;
+			hom_transform = getHomographyTransform(ar_marker);
 			setCamCloud();
 			assignGoal(ar_marker);
 			/***********************************************************************************/
@@ -567,8 +570,21 @@ class CloudGoalPublisher {
 					break;
 				}
 				cout << "Broadcasting homography tf..." << endl;
-				// broadcast homography transform with parent usb_cam
-				homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography"));//TODO PARENT CAN'T BE AR_MARKER BECAUSE THEN MOVES WITH AR_MARKER
+				if(!set_transform){
+					// broadcast homography transform with parent ar_marker
+					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
+					try{
+					  ros::Time now = ros::Time::now();
+					  //transform_listener.waitForTransform("usb_cam", "homography", now, ros::Duration(0.5));
+					  //cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
+					  transform_listener.lookupTransform("usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
+					  set_transform = true;
+					}
+					catch (tf::TransformException ex){
+					  ROS_INFO("%s",ex.what());
+					}
+				}
+				homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
 				// publish FOV of camera cloud
 				hom_cloud_pub_.publish(hom_cloud_);
 
