@@ -183,12 +183,12 @@ class CloudGoalPublisher {
 		/* Callback function used to set if roach has reached the goal point.
 		 */
 		void setSuccess(const std_msgs::Bool::ConstPtr& msg){
-			cout << "In setSuccess():" << endl;
-			cout << "		msg->data = ";
+			//cout << "In setSuccess():" << endl;
+			//cout << "		msg->data = ";
 			if(msg->data == true){
-				cout << "TRUE" << endl;
+				//cout << "TRUE" << endl;
 			}else{
-				cout << "FALSE" << endl;
+				//cout << "FALSE" << endl;
 			}
 			success_.data = msg->data;
 		}
@@ -294,9 +294,9 @@ class CloudGoalPublisher {
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform(ar_marker, "usb_cam", now, ros::Duration(5.0));
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
 			  cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
-			  transform_listener.lookupTransform(ar_marker, "usb_cam", ros::Time(0), transform);
+			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
@@ -305,9 +305,9 @@ class CloudGoalPublisher {
 			vector<cv::Point2f> roach_corners, img_corners;
 			/*************** get real world measurements of roach corners in counter clockwise order ************/
 			cv::Point2f pt1(0.0,0.0), 
-						pt2(0.0,ROACH_H),
-						pt3(ROACH_W,ROACH_H),
-						pt4(ROACH_W,0.0);
+						pt2(ROACH_H,0.0),
+						pt3(ROACH_H,-ROACH_W),
+						pt4(0.0,-ROACH_W);
 			roach_corners.push_back(pt1); roach_corners.push_back(pt2);
 			roach_corners.push_back(pt3); roach_corners.push_back(pt4);
 			cout << "		Real-life Roach corners:" << endl;
@@ -340,6 +340,7 @@ class CloudGoalPublisher {
 				roach_pts.push_back(ro_pt);
 				/***************************************/
 
+				cout << "		coords of roach point in usb_cam frame: (" << ro_pt.x << ", " << ro_pt.y << ", " << ro_pt.z << ")\n";
 				// convert to stupid opencv matrix...
 				cv::Mat pt_xyz1 = (cv::Mat_<double>(4,1) << tf_pt_pose.getOrigin().x(), tf_pt_pose.getOrigin().y(), tf_pt_pose.getOrigin().z(), 1.0);
 				// make sure to wait until P_ is initialized with message from CameraInfo
@@ -357,12 +358,56 @@ class CloudGoalPublisher {
 			for(int i = 0; i < img_corners.size(); i++){
 				cout << "		(" << img_corners[i].x << ", " << img_corners[i].y << ")\n";
 			}
-			
+
+
 			/****************************************************************************************************/
 		
 			// note: 0 means we use regular method to compute homography matrix using all points
-			homography_ = cv::findHomography(roach_corners, img_corners, 0);	
+			//homography_ = cv::findHomography(roach_corners, img_corners, 0);	
+			homography_ = computeHomography(roach_corners, img_corners);	
 			homography_inverse_ = homography_.inv();	
+
+			cout << "		lower left corner of roach PIXEL corners: (" <<  img_corners[0].x << ", " << img_corners[0].y << ")\n";
+			cv::Mat image_ll = (cv::Mat_<double>(3,1) << img_corners[0].x, img_corners[0].y, 1.0);
+			cv::Mat metric_ll = homography_inverse_*image_ll;
+			cout << "		lower left corner of roach METRTIC corners: (" <<  metric_ll.at<double>(0,0)/metric_ll.at<double>(2,0) << ", " << metric_ll.at<double>(1,0)/metric_ll.at<double>(2,0) << ");\n";
+
+			for(int i = 0; i < homography_.rows; i++){
+				for(int j = 0; j < homography_.cols; j++){
+					cout << homography_.at<double>(i,j) << " ";
+				}
+				cout << endl;
+			}
+		}
+
+		/* Computes homography matrix that transforms from real-life coordinates to pixel coordinates. 
+		 */
+		cv::Mat computeHomography(vector<cv::Point2f> roach_corners, vector<cv::Point2f> img_corners){
+			double x1 = roach_corners[0].x, y1 = roach_corners[0].y,
+				   x2 = roach_corners[1].x, y2 = roach_corners[1].y,
+				   x3 = roach_corners[2].x, y3 = roach_corners[2].y,
+				   x4 = roach_corners[3].x, y4 = roach_corners[3].y;
+			double u1 = img_corners[0].x, v1 = img_corners[0].y,
+				   u2 = img_corners[1].x, v2 = img_corners[1].y,
+				   u3 = img_corners[2].x, v3 = img_corners[2].y,
+				   u4 = img_corners[3].x, v4 = img_corners[3].y;
+			cv::Mat A = (cv::Mat_<double>(8,8) << x1, y1, 1, 0, 0, 0, -u1*x1, -u1*y1,
+												  0, 0, 0, x1, y1, 1, -v1*x1, -v1*y1,
+												  x2, y2, 1, 0, 0, 0, -u2*x2, -u2*y2,
+												  0, 0, 0, x2, y2, 1, -v2*x2, -v2*y2,
+												  x3, y3, 1, 0, 0, 0, -u3*x3, -u3*y3,
+												  0, 0, 0, x3, y3, 1, -v3*x3, -v3*y3,
+												  x4, y4, 1, 0, 0, 0, -u4*x4, -u4*y4,
+												  0, 0, 0, x4, y4, 1, -v4*x4, -v4*y4);
+			cv::Mat b = (cv::Mat_<double>(8,1) << u1, v1, u2, v2, u3, v3, u4, v4);
+			cv::Mat x = A.inv()*b;
+			double h11 = x.at<double>(0,0), h12 = x.at<double>(1,0), h13 = x.at<double>(2,0),
+				   h21 = x.at<double>(3,0), h22 = x.at<double>(4,0), h23 = x.at<double>(5,0),
+				   h31 = x.at<double>(6,0), h32 = x.at<double>(7,0);
+			cv::Mat H = (cv::Mat_<double>(3,3) << h11, h12, h13, 
+												  h21, h22, h23, 
+												  h31, h32, 1);
+			return H;
 		}
 
 		/* converts a 3x3 rotation matrix made up of x_hat, y_hat, z_hat vectors into quaternion
@@ -416,13 +461,14 @@ class CloudGoalPublisher {
 		/* Sets up a point cloud representing the camera FOV. 
 		 */
 		void setCamCloud(){
-			for(double x = 0; x < CAMERA_IMG_W; x+=12){
-				for(double y = 0; y < CAMERA_IMG_H; y+=12){
-					double data[3] = {x, y, 1.0};
+			for(int u = 0; u < CAMERA_IMG_W; u+=48){
+				for(int v = 0; v < CAMERA_IMG_H; v+=48){
+					double data[3] = {u, v, 1.0};
 					cv::Mat vec = cv::Mat(3,1, CV_64F, data);
 					cv::Mat result = homography_inverse_*vec;
 					double pt_x = result.at<double>(0,0)/result.at<double>(2,0); 
-					double pt_y = result.at<double>(1,0)/result.at<double>(2,0); 
+					double pt_y = result.at<double>(1,0)/result.at<double>(2,0);
+					cout << "(u = " << u  << ", v = " << v << "), (pt_x = " << pt_x << ", pt_y = " << pt_y << ")\n";
 					hom_cloud_->points[hom_num_pts].x = pt_x;
 					hom_cloud_->points[hom_num_pts].y = pt_y;
 					hom_cloud_->points[hom_num_pts].z = 0.0;	
@@ -439,25 +485,25 @@ class CloudGoalPublisher {
 		 * in the exploration plane. 
 		 */
 		void assignGoal(string ar_marker){
-			cout << "In assignGoal():" << endl;
+			//cout << "In assignGoal():" << endl;
 			double pdf[GOAL_GRID_W*GOAL_GRID_H];
 			double prev = 0;
 			int i = 0;
 			/*** print goal_grid_ ***/
-			cout << "goal grid: " << endl;
+			//cout << "goal grid: " << endl;
 			for(int row = 0 ; row < GOAL_GRID_H; row++){
 				for(int col = 0; col < GOAL_GRID_W; col++){
 					pdf[i] = prev+goal_grid_[row][col];
 					prev += goal_grid_[row][col];
 					i++;
-					cout << goal_grid_[row][col] << " ";
+					//cout << goal_grid_[row][col] << " ";
 				}
-				cout << endl;
+				//cout << endl;
 			}
 			srand(time(NULL));
 			// get random number between 0.0 and 1.0
 			double randNum = randDouble(0.0, 1.0);
-			cout << "		randNum: " << randNum << endl;
+			//cout << "		randNum: " << randNum << endl;
 			int gridCell = 0; 
 			// find which grid cell was chosen
 			for(int i = 0; i < GOAL_GRID_H*GOAL_GRID_W; i++){
@@ -472,7 +518,7 @@ class CloudGoalPublisher {
 					break;
 				}
 			}
-			cout << "		gridCell: " << gridCell << endl;
+			//cout << "		gridCell: " << gridCell << endl;
 			// convert grid cell to row, col for indexing into image plane
 			gridCell = 10;
 			int row = 0, col = 0;
@@ -482,28 +528,28 @@ class CloudGoalPublisher {
 				row++;
 			}
 			col = tmpCell-1;
-			cout << "		row = " << row << ", col = " << col << endl;
+			//cout << "		row = " << row << ", col = " << col << endl;
 			// upper left corner of ROI
 			double rect_h = (double)CAMERA_IMG_H/(double)GOAL_GRID_H; double rect_w = (double)CAMERA_IMG_W/(double)GOAL_GRID_W;
 			double ul_corner_x = col*rect_w; double ul_corner_y = row*rect_h; 
-			cout << "		ul_corner: (" << ul_corner_x << ", " << ul_corner_y << ")\n";
+			//cout << "		ul_corner: (" << ul_corner_x << ", " << ul_corner_y << ")\n";
 
 			// store center of ROI 
 			cv::Mat centroid = (cv::Mat_<double>(3,1) << ul_corner_x+(rect_w/2.0), ul_corner_y+(rect_h/2.0), 1.0);
-			cout << "		centroid: (" << centroid.at<double>(0,0) << ", " << centroid.at<double>(1,0) << ")\n";
+			//cout << "		centroid: (" << centroid.at<double>(0,0) << ", " << centroid.at<double>(1,0) << ")\n";
 
 			// get real-world (x,y) coordinates using homography inverse
 			cv::Mat result = homography_inverse_*centroid;
 			double x = result.at<double>(0,0)/result.at<double>(2,0);
 			double y = result.at<double>(1,0)/result.at<double>(2,0);
-			cout << "		homography centroid: (" << x << ", " << y << ")\n";
+			//cout << "		homography centroid: (" << x << ", " << y << ")\n";
 
 			// set goal point
 			goal_pt_.x = x;
 			goal_pt_.y = y;
 			goal_pt_.z = 0.0;												
-			cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
-			cout << "		Publishing goal marker..." << endl;
+			//cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
+			//cout << "		Publishing goal marker..." << endl;
 
 			// publish goal marker for rviz visualization
 			publishGoalMarker(goal_pt_, 0.05, 0.05, 0.05, 0.0, 1.0, 0.0);	
@@ -560,8 +606,8 @@ class CloudGoalPublisher {
 			tf::StampedTransform usb_hom_transform;
 			bool set_transform = false;
 			hom_transform = getHomographyTransform(ar_marker);
-			setCamCloud();
 			assignGoal(ar_marker);
+			setCamCloud();
 			/***********************************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
@@ -569,7 +615,7 @@ class CloudGoalPublisher {
 				if (input == 'q'){
 					break;
 				}
-				cout << "Broadcasting homography tf..." << endl;
+				//cout << "Broadcasting homography tf..." << endl;
 				if(!set_transform){
 					// broadcast homography transform with parent ar_marker
 					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
@@ -583,32 +629,36 @@ class CloudGoalPublisher {
 					catch (tf::TransformException ex){
 					  ROS_INFO("%s",ex.what());
 					}
-				}
-				homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
-				// publish FOV of camera cloud
-				hom_cloud_pub_.publish(hom_cloud_);
-
-				cout << "In run():" << endl;
-				cout << "		success_.data = ";
-				if(success_.data == true)
-					cout << "TRUE" << endl;
-				else
-					cout << "FALSE" << endl;
-				cout << "		Current goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
-				/*************** GET GOAL FOR VELOCIROACH **************/
-				if(success_.data){ // if roach reached goal
-					cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
-					assignGoal(ar_marker);
-					goal_pub_.publish(goal_pt_);
 				}else{
-					//cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
-					goal_pub_.publish(goal_pt_);
+					homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
+					// publish FOV of camera cloud
+					hom_cloud_pub_.publish(hom_cloud_);
+
+					//cout << "In run():" << endl;
+					//cout << "		success_.data = ";
+					if(success_.data == true){
+						//cout << "TRUE" << endl;
+					}else{
+						//cout << "FALSE" << endl;
+					}
+					//cout << "		Current goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
+					/*************** GET GOAL FOR VELOCIROACH **************/
+					if(success_.data){ // if roach reached goal
+						//cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
+						assignGoal(ar_marker);
+						goal_pub_.publish(goal_pt_);
+					}else{
+						//cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
+						goal_pub_.publish(goal_pt_);
+					}
+					/*******************************************************/	
 				}
-				/*******************************************************/
+				
 
 				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
-				for(double x = -0.055; x <= 0.055; x += 0.02){
-					for(double y = -0.035; y <= 0.035; y += 0.02){
+				//for(double x = -0.055; x <= 0.055; x += 0.01){
+					//for(double y = -0.035; y <= 0.035; y += 0.01){
+						double x = -0.055; double y = 0.035;
 						// get stamped pose wrt ar_marker (note: -0.08 is the z-offset for the base of the roach wrt the top ar marker)
 						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.08)),ros::Time(0), ar_marker);
 						tf::Stamped<tf::Pose> transformed_corner;
@@ -623,13 +673,29 @@ class CloudGoalPublisher {
 						cloud_->points[num_pts].y = tf_y;
 						cloud_->points[num_pts].z = tf_z;
 
+						if(abs(x-(-0.055)) < 0.0001 && abs(y-0.035) < 0.0001){ // if at ll corner of roach
+							cv::Mat pt_xyz1 = (cv::Mat_<double>(4,1) << tf_x, tf_y, tf_z, 1.0);
+							// get pixel coordinates of roach corners using projection/camera matrix P_
+							cv::Mat trans_pt_xyz1 = P_*pt_xyz1;
+							cv::Point2f img_pt(trans_pt_xyz1.at<double>(0,0)/trans_pt_xyz1.at<double>(2,0), trans_pt_xyz1.at<double>(1,0)/trans_pt_xyz1.at<double>(2,0));
+
+							cout << "		lower left corner of roach PIXEL corners: (" <<  img_pt.x << ", " << img_pt.y << ")\n";
+							cv::Mat image_ll = (cv::Mat_<double>(3,1) << img_pt.x, img_pt.y, 1.0);
+							cv::Mat metric_ll = homography_inverse_*image_ll;
+							cout << "		lower left corner of roach METRTIC corners: (" <<  metric_ll.at<double>(0,0)/metric_ll.at<double>(2,0) << ", " << metric_ll.at<double>(1,0)/metric_ll.at<double>(2,0) << ");\n";
+							
+							cloud_->points[num_pts].x = tf_x;
+							cloud_->points[num_pts].y = tf_y;
+							cloud_->points[num_pts].z = tf_z;
+						}
+						
 						// update octree cloud pointer and add points to octree
 						octree_search_->setInputCloud(cloud_);
 					 	octree_search_->addPointsFromInputCloud();
 
 						num_pts+=1;
-					}
-				}
+					//}
+				//}
 				//cout << "		Publishing point cloud.\n";
 				cloud_->header.stamp = ros::Time::now().toNSec();
 				cloud_pub_.publish(cloud_);

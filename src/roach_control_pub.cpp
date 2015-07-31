@@ -150,8 +150,8 @@ class RoachController {
 				  ROS_ERROR("%s",ex.what());
 				  ros::Duration(1.0).sleep();
 				}
-				// get center of roach in context of usb_cam
-				tf::Vector3 center_vec(0.0, 0.0, -0.08);
+				// get center of roach in context of homography_plane
+				tf::Vector3 center_vec(0.055, -0.035, 0.0);
 				tf::Stamped<tf::Pose> center(tf::Pose(tf::Quaternion(0, 0, 0, 1), center_vec),ros::Time(0), robot_ar_marker);
 				tf::Stamped<tf::Pose> tf_center;
 				transform_listener.transformPose("usb_cam", center, tf_center);
@@ -191,7 +191,9 @@ class RoachController {
 				}else if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
 					double goalXLoc = goalX;
 					double goalYLoc = goalY;
-					angle = (atan2(unit_y.getY(),unit_y.getX()) - atan2(goalYLoc,goalXLoc)); // angle in radians relative to third point (0,0)
+					// get angle between robot and goal in radians relative to third point (0,0)
+					angle = (atan2(unit_y.getY(),unit_y.getX()) - atan2(goalYLoc,goalXLoc)); 
+					// get distance between center of robot and goal point
 					distance = sqrt(pow(goalXLoc-unit_y.getX(),2)+pow(goalYLoc-unit_y.getY(),2));
 					cout << "		angle = " << angle << ", distance = " << distance << endl;
 					// Turn stage
