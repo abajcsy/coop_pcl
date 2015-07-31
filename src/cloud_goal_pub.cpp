@@ -621,7 +621,7 @@ class CloudGoalPublisher {
 					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
 					try{
 					  ros::Time now = ros::Time::now();
-					  //transform_listener.waitForTransform("usb_cam", "homography", now, ros::Duration(0.5));
+					  //transform_listener.waitForTransform("usb_cam", "homography_init", now, ros::Duration(0.5));
 					  //cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
 					  transform_listener.lookupTransform("usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
 					  set_transform = true;

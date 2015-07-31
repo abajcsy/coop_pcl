@@ -142,39 +142,37 @@ class RoachController {
 				tf::StampedTransform path_transform;
 				try{
 				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform("usb_cam", robot_ar_marker, now, ros::Duration(5.0));
-				  cout << "		Looking up tf from robot_ar_marker to map ...\n";
-				  transform_listener.lookupTransform("usb_cam", robot_ar_marker, ros::Time(0), path_transform);
+				  transform_listener.waitForTransform("homography_plane", robot_ar_marker, now, ros::Duration(5.0));
+				  cout << "		Looking up tf from robot_ar_marker to homography_plane ...\n";
+				  transform_listener.lookupTransform("homography_plane", robot_ar_marker, ros::Time(0), path_transform);
 				}
 				catch (tf::TransformException ex){
 				  ROS_ERROR("%s",ex.what());
-				  ros::Duration(1.0).sleep();
+				  ros::Duration(10.0).sleep();
 				}
 				// get center of roach in context of homography_plane
-				tf::Vector3 center_vec(0.055, -0.035, 0.0);
+				tf::Vector3 center_vec(0.055, -0.035, -0.08);
 				tf::Stamped<tf::Pose> center(tf::Pose(tf::Quaternion(0, 0, 0, 1), center_vec),ros::Time(0), robot_ar_marker);
 				tf::Stamped<tf::Pose> tf_center;
-				transform_listener.transformPose("usb_cam", center, tf_center);
+				transform_listener.transformPose("homography_plane", center, tf_center);
+	
+				// get vector in direction of the head of the roach
+				double roach_center_x = tf_center.getOrigin().x();
+				double roach_center_y = tf_center.getOrigin().y();
+				double roach_center_z = tf_center.getOrigin().z();
+				tf::Vector3 roach_dir(roach_center_x, roach_center_y, roach_center_z);
 
-				// get goal_points in context of robot_ar_marker
-				tf::Vector3 goal_vec(goal_pt_.x, goal_pt_.y, goal_pt_.z);
-				tf::Stamped<tf::Pose> goal_pose(tf::Pose(tf::Quaternion(0, 0, 0, 1), goal_vec),ros::Time(0), "usb_cam");
-				tf::Stamped<tf::Pose> tf_goal_pose;
-				transform_listener.transformPose(robot_ar_marker, goal_pose, tf_goal_pose);
-
-				double goalX = tf_goal_pose.getOrigin().x();
-				double goalY = tf_goal_pose.getOrigin().y();
-				double goalZ = tf_goal_pose.getOrigin().z();			
-
-				// unit vector in direction of y (the head of the roach)		
-				tf::Vector3 unit_y(0.0, 1.0, 0.0);
-
+				// get goal_points in context of homography_plane
+				double goalX = goal_pt_.x;
+				double goalY = goal_pt_.y;
+				double goalZ = goal_pt_.z;	
+				// get vector in direction of goal position
+				double norm = sqrt(pow(goalX-roach_center_x,2)+ pow(goalY-roach_center_y,2) + pow(goalZ-roach_center_z,2));
+				tf::Vector3 goal_dir((goalX-roach_center_x)/norm, (goalY-roach_center_y)/norm, (goalZ-roach_center_z)/norm);
+		
 				// Extract planar position coordinates
     			double Xn= path_transform.getOrigin().x();
    				double Yn= path_transform.getOrigin().y();
-				/*
-    			cout << "X = " << Xn << ", Y = " << Yn << ", yaw = " << yaw << ", stage = " << stage << ", counter = " << counter << endl;
-				*/
 
 				double currX = tf_center.getOrigin().x();											
 				double currY = tf_center.getOrigin().y();
@@ -189,12 +187,10 @@ class RoachController {
 					linear = 0.0;	// don't move until next command
 					cout << "		REACHED GOAL!" << endl;
 				}else if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
-					double goalXLoc = goalX;
-					double goalYLoc = goalY;
 					// get angle between robot and goal in radians relative to third point (0,0)
-					angle = (atan2(unit_y.getY(),unit_y.getX()) - atan2(goalYLoc,goalXLoc)); 
+					angle = atan2(roach_dir.getY(),roach_dir.getX()) - atan2(goal_dir.getY(),goal_dir.getX()); 
 					// get distance between center of robot and goal point
-					distance = sqrt(pow(goalXLoc-unit_y.getX(),2)+pow(goalYLoc-unit_y.getY(),2));
+					distance = sqrt(pow(goal_dir.getX()-roach_dir.getX(),2)+pow(goal_dir.getY()-roach_dir.getY(),2));
 					cout << "		angle = " << angle << ", distance = " << distance << endl;
 					// Turn stage
 					if(stage == TURN) {
