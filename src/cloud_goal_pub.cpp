@@ -520,7 +520,7 @@ class CloudGoalPublisher {
 			}
 			//cout << "		gridCell: " << gridCell << endl;
 			// convert grid cell to row, col for indexing into image plane
-			gridCell = 10;
+			//gridCell = 10;
 			int row = 0, col = 0;
 			int tmpCell = gridCell;
 			while(tmpCell > GOAL_GRID_W){
@@ -595,7 +595,7 @@ class CloudGoalPublisher {
 
 			int input = 'c';
 			int maxCloudSize = cloud_->width*cloud_->height;
-
+			bool needNewGoal = false;
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
 
 			ros::Rate loop_rate(2);
@@ -634,20 +634,21 @@ class CloudGoalPublisher {
 
 					cout << "In run():" << endl;
 					cout << "		success_.data = ";
-					if(success_.data == true){
+					if(success_.data == true)
 						cout << "TRUE" << endl;
-					}else{
+					else
 						cout << "FALSE" << endl;
-					}
 					//cout << "		Current goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
 					/*************** GET GOAL FOR VELOCIROACH **************/
-					if(success_.data){ // if roach reached goal
+					if(success_.data && needNewGoal){ // if roach reached goal and haven't set new goal
 						cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 						assignGoal(ar_marker);
+						needNewGoal = false;
 						goal_pub_.publish(goal_pt_);
 					}else{
 						//cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
 						goal_pub_.publish(goal_pt_);
+						needNewGoal = true;
 					}
 					/*******************************************************/	
 				}

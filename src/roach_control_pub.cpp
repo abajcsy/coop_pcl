@@ -189,6 +189,7 @@ class RoachController {
 								base_cmd.angular.z = 0.0;
 								success_.data = true;
 						}else{
+							success_.data = false;
 							// Turn stage
 							if(stage == TURN) {
 								cout << "................IN TURN STAGE................\n";
