@@ -198,12 +198,13 @@ class RoachController {
 								cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
 								base_cmd.linear.x = 0.0;
 								base_cmd.angular.z = 1*error;
-								// Threshold the velocity at 0.5 (change the limit if you want to turn quite fast)
-								if(base_cmd.angular.z > 0.4)
-									base_cmd.angular.z = 0.4;
-								if(base_cmd.angular.z < -0.4)
-									base_cmd.angular.z = -0.4;
-								if(abs(base_cmd.angular.z) < 0.2){
+								// Threshold a velocity that is -0.2 < vel < 0.2 or -0.4 > vel > 0.4  
+								if(abs(base_cmd.angular.z) > 0.4){
+									if(base_cmd.angular.z < -0.4)
+										base_cmd.angular.z = -0.4;
+									else
+										base_cmd.angular.z = 0.4;
+								}else if(abs(base_cmd.angular.z) < 0.2){
 									if(base_cmd.angular.z < 0.0)
 										base_cmd.angular.z = -0.4;
 									else

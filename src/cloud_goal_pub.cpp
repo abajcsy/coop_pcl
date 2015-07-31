@@ -593,21 +593,23 @@ class CloudGoalPublisher {
 		void run(std::string pcd_filename){
 			string ar_marker = "ar_marker_0_bundle"; 
 
+			tf::Transform hom_transform; 
+			tf::StampedTransform usb_hom_transform;
+
 			int input = 'c';
 			int maxCloudSize = cloud_->width*cloud_->height;
-			bool needNewGoal = false;
+			bool setGoal = false;
+			bool setTransform = false;
 			cout << "Press 'q' to quit data collection and save point cloud.\n";
 
 			ros::Rate loop_rate(2);
 
 			/*************** SET UP HOMOGRAPHY & SET INITIAL GOAL FOR VELOCIROACH **************/
 			computeHomography(ar_marker);
-			tf::Transform hom_transform; 
-			tf::StampedTransform usb_hom_transform;
-			bool set_transform = false;
 			hom_transform = getHomographyTransform(ar_marker);
-			assignGoal(ar_marker);
 			setCamCloud();
+
+			assignGoal(ar_marker);
 			/***********************************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
@@ -615,41 +617,47 @@ class CloudGoalPublisher {
 				if (input == 'q'){
 					break;
 				}
-				//cout << "Broadcasting homography tf..." << endl;
-				if(!set_transform){
-					// broadcast homography transform with parent ar_marker
+				
+				if(!setTransform){
+					// if we haven't setup the transform successfully yet, attempt to broadcast homography transform with parent ar_marker
 					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
 					try{
 					  ros::Time now = ros::Time::now();
 					  transform_listener.lookupTransform("usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
-					  set_transform = true;
+					  setTransform = true;
 					}
 					catch (tf::TransformException ex){
 					  ROS_INFO("%s",ex.what());
 					}
 				}else{
 					homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
-					// publish FOV of camera cloud
+					// publish point cloud representing FOV of camera
 					hom_cloud_pub_.publish(hom_cloud_);
 
 					cout << "In run():" << endl;
 					cout << "		success_.data = ";
-					if(success_.data == true)
+					if(success_.data)
 						cout << "TRUE" << endl;
 					else
 						cout << "FALSE" << endl;
-					//cout << "		Current goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
+
 					/*************** GET GOAL FOR VELOCIROACH **************/
-					if(success_.data && needNewGoal){ // if roach reached goal and haven't set new goal
+					// if roach reached goal and haven't set new goal
+					if(success_.data && !setGoal){ 
 						cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 						assignGoal(ar_marker);
-						needNewGoal = false;
-						goal_pub_.publish(goal_pt_);
-					}else{
-						//cout << "		CloudGoal: Still on old goal: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";
-						goal_pub_.publish(goal_pt_);
-						needNewGoal = true;
+						setGoal = true;
+					}else if (!success_.data && setGoal){
+						setGoal = false;
 					}
+					// publish either updated goal or old goal
+					goal_pub_.publish(goal_pt_);
+
+					cout << "		setGoal = ";
+					if(setGoal)
+						cout << "TRUE" << endl;
+					else
+						cout << "FALSE" << endl;
 					/*******************************************************/	
 				}
 				
