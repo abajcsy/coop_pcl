@@ -9,6 +9,8 @@
 #include <geometry_msgs/Quaternion.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include "tf/LinearMath/Transform.h"
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
@@ -116,139 +118,140 @@ class RoachController {
 		 * goal point set by the cloud_goal_pub
 		 */
 		void explore() {
-
 			// publish Twist message for linear and angular velocities
 			geometry_msgs::Twist base_cmd;
 
-			string robot_ar_marker = "ar_marker_0_bundle"; 
+			string ar_marker = "ar_marker_0_bundle"; 
 
 			double angle = 0.0;
 		    double distance = 0.0;
 
-		    double d2 = 0.0;
-		    double b2 = 0.0;
-
 		    int stage = 0;
 		    int counter = 0;
-		    double Xo = 0.0;
-		    double Yo = 0.0;
-
-			double angular = 0.0, linear = 0.0;
+	
+			bool got_transform = false;
 
 			ros::Rate loop_rate(0.5);
 			while(nh_.ok()){
 				cout << "ROACH_CONTROL_PUB: In explore():\n";
-				// get current location of roach
-				tf::StampedTransform path_transform;
-				try{
-				  ros::Time now = ros::Time::now();
-				  transform_listener.waitForTransform("homography_plane", robot_ar_marker, now, ros::Duration(5.0));
-				  cout << "		Looking up tf from robot_ar_marker to homography_plane ...\n";
-				  transform_listener.lookupTransform("homography_plane", robot_ar_marker, ros::Time(0), path_transform);
-				}
-				catch (tf::TransformException ex){
-				  ROS_ERROR("%s",ex.what());
-				  ros::Duration(10.0).sleep();
-				}
-				// get center of roach in context of homography_plane
-				tf::Vector3 center_vec(0.055, -0.035, -0.08);
-				tf::Stamped<tf::Pose> center(tf::Pose(tf::Quaternion(0, 0, 0, 1), center_vec),ros::Time(0), robot_ar_marker);
-				tf::Stamped<tf::Pose> tf_center;
-				transform_listener.transformPose("homography_plane", center, tf_center);
+				// wait until we successfully looked up transform before doing computations
+				if(!got_transform){
+					// get current location of roach
+					tf::StampedTransform path_transform;
+					try{
+					  ros::Time now = ros::Time::now();
+					  cout << "		Looking up tf from homography_plane to ar_marker...\n";
+					  transform_listener.lookupTransform(ar_marker, "homography_plane", ros::Time(0), path_transform);
+					  got_transform = true;
+					}
+					catch (tf::TransformException ex){
+					  ROS_INFO("%s",ex.what());														
+					}
+				}else{
+					/* FOR ALL COMPUTATIONS - always operate in ar_marker frame
+					 *	(1) Get center of roach wrt ar_marker frame (just 0,0,-0.08)
+					 *	(2) Get vector in direction of goal point by transforming goal_pt_ from homography_plane into ar_marker frame
+					 *	(3) Compute angle between goal_vec and robot x-axis:
+					 *			radians = atan2(tf_goal_pt.getOrigin.y(),tf_goal_pt.getOrigin.x())
+					 *  (4) Compute distance between goal_vec and robot x-axis:
+					 *  		distance = sqrt(pow(tf_goal_pt.getOrigin.x(),2)+pow(tf_goal_pt.getOrigin.y(),2))
+					 */
+
+					// get center of roach in ar_marker frame
+					tf::Vector3 roach_center(0.0, 0.0, -0.08);	
+					cout << "-----> roach_center (ar_marker frame): (" << roach_center.getX() << ", " << roach_center.getY() << ", " << roach_center.getY() << ")\n";
+
+					// convert goal_pt from homography_plane to ar_marker frame
+					tf::Vector3 goal_vec(goal_pt_.x,goal_pt_.y,goal_pt_.z);
+					tf::Stamped<tf::Pose> goal_pose(tf::Pose(tf::Quaternion(0, 0, 0, 1), goal_vec),ros::Time(0), "homography_plane");
+					tf::Stamped<tf::Pose> tf_goal_pose;
+					transform_listener.transformPose(ar_marker, goal_pose, tf_goal_pose);
+
+					// get goal_points in context of homography_plane
+					double goalX = tf_goal_pose.getOrigin().x();
+					double goalY = tf_goal_pose.getOrigin().y();
+					double goalZ = tf_goal_pose.getOrigin().z();	
+
+					cout << "-----> goal_pose (ar_marker frame): (" << goalX << ", " << goalY << ", " << goalZ << ")\n";
 	
-				// get vector in direction of the head of the roach
-				double roach_center_x = tf_center.getOrigin().x();
-				double roach_center_y = tf_center.getOrigin().y();
-				double roach_center_z = tf_center.getOrigin().z();
-				tf::Vector3 roach_dir(roach_center_x, roach_center_y, roach_center_z);
+					if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
+						// get angle between robot x-axis and goal in radians 
+						angle = atan2(goalY,goalX); 
+						// get distance between center of robot and goal point
+						distance = sqrt(pow(goalX,2)+pow(goalY,2));
+						cout << "		angle = " << angle << ", distance = " << distance << endl;
 
-				// get goal_points in context of homography_plane
-				double goalX = goal_pt_.x;
-				double goalY = goal_pt_.y;
-				double goalZ = goal_pt_.z;	
-				// get vector in direction of goal position
-				double norm = sqrt(pow(goalX-roach_center_x,2)+ pow(goalY-roach_center_y,2) + pow(goalZ-roach_center_z,2));
-				tf::Vector3 goal_dir((goalX-roach_center_x)/norm, (goalY-roach_center_y)/norm, (goalZ-roach_center_z)/norm);
-		
-				// Extract planar position coordinates
-    			double Xn= path_transform.getOrigin().x();
-   				double Yn= path_transform.getOrigin().y();
-
-				double currX = tf_center.getOrigin().x();											
-				double currY = tf_center.getOrigin().y();
-				double currZ = tf_center.getOrigin().z();
-				cout << "		currPt: (" << currX << ", " << currY << ", " << currZ << ")\n"; 
-				cout << "		goalPt: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n"; 
-				if(abs(currX - goal_pt_.x) <= EPSILON && abs(currY - goal_pt_.y) <= EPSILON){
-					// roach has reached the goal!
-					success_.data = true;
-					success_pub_.publish(success_);
-					angular = 0.0;
-					linear = 0.0;	// don't move until next command
-					cout << "		REACHED GOAL!" << endl;
-				}else if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
-					// get angle between robot and goal in radians relative to third point (0,0)
-					angle = atan2(roach_dir.getY(),roach_dir.getX()) - atan2(goal_dir.getY(),goal_dir.getX()); 
-					// get distance between center of robot and goal point
-					distance = sqrt(pow(goal_dir.getX()-roach_dir.getX(),2)+pow(goal_dir.getY()-roach_dir.getY(),2));
-					cout << "		angle = " << angle << ", distance = " << distance << endl;
-					// Turn stage
-					if(stage == TURN) {
-						double goal = 0.0;
-						double error = angle - goal;
-						cout << "goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
-						base_cmd.linear.x = 0.0;
-						base_cmd.angular.z = -2.0*error;
-						// Threshold the velocity at 0.5 (change the limit if you want to turn quite fast)
-						if(base_cmd.angular.z>0.5)
-							base_cmd.angular.z=0.5;
-						if(base_cmd.angular.z<-0.5)
-							base_cmd.angular.z=-0.5;
-						cout << "		base_cmd.angular.z = " << base_cmd.angular.z << endl;
-						// Check for end condition
-						if(error < -0.05 || error > 0.05){
-							counter = 0;
-							cout << "checked for end condition...\n";
-						}else{
-							counter++;
-							if(counter == 10){
-								cout << "		done turning...\n";
-								// stop turning
+						// check each time if we're close enough to goal point
+						if(abs(distance) < EPSILON){
+								stage = TURN;
+								cout << "GOT TO GOAL!" << endl;
+								base_cmd.linear.x = 0.0;
 								base_cmd.angular.z = 0.0;
-								// movement phase flag
-								stage = FORWARD; counter = 0;
-								// record start position
-								Xo = Xn; Yo = Yn;
+								success_.data = true;
+						}else{
+							// Turn stage
+							if(stage == TURN) {
+								cout << "................IN TURN STAGE................\n";
+								double goal = 0.0;
+								double error = angle;
+								cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
+								base_cmd.linear.x = 0.0;
+								base_cmd.angular.z = 1*error;
+								// Threshold the velocity at 0.5 (change the limit if you want to turn quite fast)
+								if(base_cmd.angular.z > 0.4)
+									base_cmd.angular.z = 0.4;
+								if(base_cmd.angular.z < -0.4)
+									base_cmd.angular.z = -0.4;
+								if(abs(base_cmd.angular.z) < 0.2){
+									if(base_cmd.angular.z < 0.0)
+										base_cmd.angular.z = -0.4;
+									else
+										base_cmd.angular.z = 0.4;
+								}
+								// Check for end condition
+								if(error < -EPSILON || error > EPSILON){
+									counter = 0;
+									cout << "		checked for end condition...\n";
+								}else{
+									counter++;
+									if(counter == 5){
+										cout << "		done turning...\n";
+										// stop turning
+										base_cmd.angular.z = 0.0;
+										// movement phase flag
+										stage = FORWARD; 
+										counter = 0;
+									}
+								}
+							}
+							// Forward movement stage
+							if(stage == FORWARD){
+								cout << "................IN FORWARD STAGE................\n";
+								cout << "Current Distance from Goal =" << distance << endl;
+								// set speed
+								base_cmd.linear.x = 0.2;
+								if(abs(distance) < EPSILON){
+									stage = TURN;
+									cout << "GOT TO GOAL!" << endl;
+									base_cmd.linear.x = 0.0;
+									base_cmd.angular.z = 0.0;
+									success_.data = true;
+								}
 							}
 						}
+						success_pub_.publish(success_);
+					}else{
+						// case where we are waiting for goal point to be assigned, do nothing 
+						base_cmd.linear.x = 0.0;   
+						base_cmd.angular.z = 0.0;  
+						success_.data = false;
+						success_pub_.publish(success_);
 					}
-					// Forward movement stage
-					if(stage == FORWARD){
-						double goal = distance;
-						double distC = sqrt(pow(Xn-Xo,2) + pow(Yn-Yo,2));
-      					double error = goal - sqrt(pow(Xn-Xo,2) + pow(Yn-Yo,2));
-						cout << "Distance =" << distC << ", Error = " << error << endl;
-						// set speed
-						base_cmd.linear.x = 0.1;
-						if(error < 0.01 && error > -0.01){
-							stage = TURN;
-							cout << "GOT TO TARGET!" << endl;
-							base_cmd.linear.x = 0.0;
-							base_cmd.angular.z = 0.0;
-							success_.data = true;
-						}
-					}
-					success_pub_.publish(success_);
-				}else{
-					// case where we are waiting for goal point to be assigned, do nothing 
-					base_cmd.linear.x = 0.0;   
-					base_cmd.angular.z = 0.0;  
-					success_.data = false;
-					success_pub_.publish(success_);
+					cout << "		Publishing linear vel: " << base_cmd.linear.x << ", Angular vel: " << base_cmd.angular.z << endl;
+					// publish velocity commands to get roach towards goal
+					cmd_vel_pub_.publish(base_cmd);	
 				}
-				cout << "		Publishing linear vel: " << linear << ", Angular vel: " << angular << endl;
-				// publish velocity commands to get roach towards goal
-				cmd_vel_pub_.publish(base_cmd);	
+
 				ros::spinOnce();
 				loop_rate.sleep();
 			}
