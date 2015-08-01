@@ -29,7 +29,8 @@
 
 // defines how close the roach needs to be to the goal to consider it having reached the goal
 // error margin defined in meters
-#define EPSILON 0.05			
+#define EPSILON 0.05	
+#define ATTEMPT_THRESH 10	
 
 #define TURN 0
 #define FORWARD 1
@@ -52,12 +53,14 @@ class RoachController {
 
 	private: 
 		ros::NodeHandle nh_;
-		ros::Publisher cmd_vel_pub_;		// publishes velocity info to /robot1/cmd_vel 
+		ros::Publisher cmd_vel_pub_;		// publishes velocity info to /robot1/cmd_vel
+		ros::Publisher fail_pub_;			// publishes failure info to /fail 
 		ros::Publisher success_pub_;		// publishes if succeeded to get to goal /success 
 		ros::Subscriber goal_sub_;			// subcribes to /goal from cloud_goal_pub.cpp
 		
 		geometry_msgs::Point goal_pt_;		// stores goal location for roach to move to
 		std_msgs::Bool success_;			// stores if the roach was able to reach goal location
+		std_msgs::Bool fail_flag_;			// stores if the roach FAILED to reach goal location after N attempts
 
 		tf::TransformListener transform_listener;
 
@@ -94,11 +97,13 @@ class RoachController {
 			ros::NodeHandle nh;
 			nh_ = nh;
 
-			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot1/cmd_vel", 1);
+			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot0/cmd_vel", 1);
 			success_pub_ = nh_.advertise<std_msgs::Bool>("success",1);
+			fail_pub_ = nh_.advertise<std_msgs::Bool>("fail",1);
 			goal_sub_ = nh_.subscribe<geometry_msgs::Point>("goal_pt", 1000, &RoachController::setGoal, this);	
 
 			success_.data = false; 
+			fail_flag_.data = false; 
 
 			goal_pt_.x = -100;
 			goal_pt_.y = -100;
@@ -128,8 +133,13 @@ class RoachController {
 
 		    int stage = 0;
 		    int counter = 0;
-	
+
+			// used to check if we got transform from homography_plane to ar_marker
 			bool got_transform = false;
+			
+			// counts number of times robot attempted to get to goal but hasn't changed its distance from goal (aka. its stuck)
+			int attempt_counter = 0;
+			double prev_dist = 0;
 
 			ros::Rate loop_rate(0.5);
 			while(nh_.ok()){
@@ -148,6 +158,7 @@ class RoachController {
 					  ROS_INFO("%s",ex.what());														
 					}
 				}else{
+					got_transform = false;
 					/* FOR ALL COMPUTATIONS - always operate in ar_marker frame
 					 *	(1) Get center of roach wrt ar_marker frame (just 0,0,-0.08)
 					 *	(2) Get vector in direction of goal point by transforming goal_pt_ from homography_plane into ar_marker frame
@@ -174,9 +185,11 @@ class RoachController {
 
 					cout << "-----> goal_pose (ar_marker frame): (" << goalX << ", " << goalY << ", " << goalZ << ")\n";
 	
-					if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						//TODO DEAL WITH CASES WHERE CAN NEVER GET TO GOAL (I.E. OBSTACLE IN WAY)
+					if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						
 						// get angle between robot x-axis and goal in radians 
 						angle = atan2(goalY,goalX); 
+						// store old distance for comparison
+						prev_dist = distance;
 						// get distance between center of robot and goal point
 						distance = sqrt(pow(goalX,2)+pow(goalY,2));
 						cout << "		angle = " << angle << ", distance = " << distance << endl;
@@ -189,55 +202,73 @@ class RoachController {
 								base_cmd.angular.z = 0.0;
 								success_.data = true;
 						}else{
-							success_.data = false;
-							// Turn stage
-							if(stage == TURN) {
-								cout << "................IN TURN STAGE................\n";
-								double goal = 0.0;
-								double error = angle;
-								cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
-								base_cmd.linear.x = 0.0;
-								base_cmd.angular.z = 1*error;
-								// Threshold a velocity that is -0.2 < vel < 0.2 or -0.4 > vel > 0.4  
-								if(abs(base_cmd.angular.z) > 0.4){
-									if(base_cmd.angular.z < -0.4)
-										base_cmd.angular.z = -0.4;
-									else
-										base_cmd.angular.z = 0.4;
-								}else if(abs(base_cmd.angular.z) < 0.2){
-									if(base_cmd.angular.z < 0.0)
-										base_cmd.angular.z = -0.4;
-									else
-										base_cmd.angular.z = 0.4;
-								}
-								// Check for end condition
-								if(error < -EPSILON || error > EPSILON){
-									counter = 0;
-									cout << "		checked for end condition...\n";
-								}else{
-									counter++;
-									if(counter == 5){
-										cout << "		done turning...\n";
-										// stop turning
-										base_cmd.angular.z = 0.0;
-										// movement phase flag
-										stage = FORWARD; 
+							cout << "====> attempt_counter = " << attempt_counter << ", prev_dist = " << prev_dist << ", distance = " << distance << endl;
+							// if haven't moved significantly since the last attempt to move, increase attempt counter
+							if(abs(distance - prev_dist) < EPSILON){
+								attempt_counter++;
+							}else{
+								attempt_counter = 0; // reset if we've moved on significantly
+							}
+							// if we've attempted too many times, send fail flag!
+							if(attempt_counter > ATTEMPT_THRESH){
+								fail_flag_.data = true;
+								fail_pub_.publish(fail_flag_);
+								success_.data = false;
+								attempt_counter = 0;
+								base_cmd.linear.x = -0.3;
+							}else{
+								fail_flag_.data = false;
+								fail_pub_.publish(fail_flag_);
+								success_.data = false;
+								// Turn stage
+								if(stage == TURN) {
+									cout << "................IN TURN STAGE................\n";
+									double goal = 0.0;
+									double error = angle;
+									cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
+									base_cmd.linear.x = 0.0;
+									base_cmd.angular.z = 1*error;
+									// Threshold a velocity that is -0.2 < vel < 0.2 or -0.4 > vel > 0.4  
+									if(abs(base_cmd.angular.z) > 0.4){
+										if(base_cmd.angular.z < -0.4)
+											base_cmd.angular.z = -0.4;
+										else
+											base_cmd.angular.z = 0.4;
+									}else if(abs(base_cmd.angular.z) < 0.2){
+										if(base_cmd.angular.z < 0.0)
+											base_cmd.angular.z = -0.4;
+										else
+											base_cmd.angular.z = 0.4;
+									}
+									// Check for end condition
+									if(error < -EPSILON || error > EPSILON){
 										counter = 0;
+										cout << "		checked for end condition...\n";
+									}else{
+										counter++;
+										if(counter == 5){
+											cout << "		done turning...\n";
+											// stop turning
+											base_cmd.angular.z = 0.0;
+											// movement phase flag
+											stage = FORWARD; 
+											counter = 0;
+										}
 									}
 								}
-							}
-							// Forward movement stage
-							if(stage == FORWARD){
-								cout << "................IN FORWARD STAGE................\n";
-								cout << "Current Distance from Goal =" << distance << endl;
-								// set speed
-								base_cmd.linear.x = 0.2;
-								if(abs(distance) < EPSILON){
-									stage = TURN;
-									cout << "GOT TO GOAL!" << endl;
-									base_cmd.linear.x = 0.0;
-									base_cmd.angular.z = 0.0;
-									success_.data = true;
+								// Forward movement stage
+								if(stage == FORWARD){
+									cout << "................IN FORWARD STAGE................\n";
+									cout << "Current Distance from Goal =" << distance << endl;
+									// set speed
+									base_cmd.linear.x = 0.2;
+									if(abs(distance) < EPSILON){
+										stage = TURN;
+										cout << "GOT TO GOAL!" << endl;
+										base_cmd.linear.x = 0.0;
+										base_cmd.angular.z = 0.0;
+										success_.data = true;
+									}
 								}
 							}
 						}

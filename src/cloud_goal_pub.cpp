@@ -70,6 +70,7 @@ class CloudGoalPublisher {
 		ros::Publisher marker_pub_;			// publishes marker representing next goal point to /visualization_marker
 		ros::Publisher marker_array_pub_;	// publishes marker array to /visualization_marker_array
 		ros::Subscriber success_sub_;		// subcribes to /success from roach_control_pub.cpp
+		ros::Subscriber fail_sub_;			// subcribes to /fail from roach_control_pub.cpp
 		ros::Subscriber camera_info_sub_;	// subscribes to /usb_cam/camera_info to get camera projection matrix
 
 		tf::TransformListener transform_listener;
@@ -84,6 +85,7 @@ class CloudGoalPublisher {
 
 		geometry_msgs::Point goal_pt_;		// next goal location for roach to move to
 		std_msgs::Bool success_;			// stores if the roach was able to reach goal location
+		std_msgs::Bool fail_flag_;			// stores if the roach FAILED to reach goal location after N attempts
 
 		cv::Mat homography_;				// homography between ground coords and camera pixels
 		cv::Mat homography_inverse_;		
@@ -92,6 +94,7 @@ class CloudGoalPublisher {
 		// represents camera's image divided into GOAL_GRID_H*GOAL_GRID_W rectangular regions
 		// stores within it the probability of landing on that grid location
 		double goal_grid_[GOAL_GRID_H][GOAL_GRID_W]; 
+		int goal_row_, goal_col_;
 
 		/* Returns a random double between fMin and fMax.
 		 */
@@ -138,6 +141,7 @@ class CloudGoalPublisher {
 			hom_cloud_pub_ = nh_.advertise<PointCloud>("hom_points2", 1);
 			goal_pub_ = nh_.advertise<geometry_msgs::Point>("goal_pt", 1);
 			success_sub_ = nh_.subscribe<std_msgs::Bool>("success", 1000, &CloudGoalPublisher::setSuccess, this);
+			fail_sub_ = nh_.subscribe<std_msgs::Bool>("fail", 1000, &CloudGoalPublisher::setFail, this);
 			camera_info_sub_ = nh_.subscribe<sensor_msgs::CameraInfo>("usb_cam/camera_info", 1000, &CloudGoalPublisher::setP, this);
 
 			marker_pub_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 1);
@@ -183,14 +187,13 @@ class CloudGoalPublisher {
 		/* Callback function used to set if roach has reached the goal point.
 		 */
 		void setSuccess(const std_msgs::Bool::ConstPtr& msg){
-			//cout << "In setSuccess():" << endl;
-			//cout << "		msg->data = ";
-			if(msg->data == true){
-				//cout << "TRUE" << endl;
-			}else{
-				//cout << "FALSE" << endl;
-			}
 			success_.data = msg->data;
+		}
+
+		/* Callback function used to set if roach has FAILED to reached the goal point.
+		 */
+		void setFail(const std_msgs::Bool::ConstPtr& msg){
+			fail_flag_.data = msg->data;
 		}
 
 		/* Callback function used to set Projection/camera matrix from CameraInfo
@@ -340,7 +343,6 @@ class CloudGoalPublisher {
 				roach_pts.push_back(ro_pt);
 				/***************************************/
 
-				cout << "		coords of roach point in usb_cam frame: (" << ro_pt.x << ", " << ro_pt.y << ", " << ro_pt.z << ")\n";
 				// convert to stupid opencv matrix...
 				cv::Mat pt_xyz1 = (cv::Mat_<double>(4,1) << tf_pt_pose.getOrigin().x(), tf_pt_pose.getOrigin().y(), tf_pt_pose.getOrigin().z(), 1.0);
 				// make sure to wait until P_ is initialized with message from CameraInfo
@@ -358,19 +360,11 @@ class CloudGoalPublisher {
 			for(int i = 0; i < img_corners.size(); i++){
 				cout << "		(" << img_corners[i].x << ", " << img_corners[i].y << ")\n";
 			}
-
-
 			/****************************************************************************************************/
 		
-			// note: 0 means we use regular method to compute homography matrix using all points
-			//homography_ = cv::findHomography(roach_corners, img_corners, 0);	
+			// compute H matrix that goes from real-world coords to pixel coords and H^-1 that goes in opposite direction
 			homography_ = computeHomography(roach_corners, img_corners);	
-			homography_inverse_ = homography_.inv();	
-
-			cout << "		lower left corner of roach PIXEL corners: (" <<  img_corners[0].x << ", " << img_corners[0].y << ")\n";
-			cv::Mat image_ll = (cv::Mat_<double>(3,1) << img_corners[0].x, img_corners[0].y, 1.0);
-			cv::Mat metric_ll = homography_inverse_*image_ll;
-			cout << "		lower left corner of roach METRTIC corners: (" <<  metric_ll.at<double>(0,0)/metric_ll.at<double>(2,0) << ", " << metric_ll.at<double>(1,0)/metric_ll.at<double>(2,0) << ");\n";
+			homography_inverse_ = homography_.inv();
 
 			for(int i = 0; i < homography_.rows; i++){
 				for(int j = 0; j < homography_.cols; j++){
@@ -410,7 +404,7 @@ class CloudGoalPublisher {
 			return H;
 		}
 
-		/* converts a 3x3 rotation matrix made up of x_hat, y_hat, z_hat vectors into quaternion
+		/* Converts a 3x3 rotation matrix made up of x_hat, y_hat, z_hat vectors into quaternion.
 		 */
 		tf::Quaternion rotationToQuaternion(cv::Mat x_hat, cv::Mat y_hat, cv::Mat z_hat){
 			double qx, qy, qz, qw;
@@ -490,22 +484,23 @@ class CloudGoalPublisher {
 			double prev = 0;
 			int i = 0;
 			/*** print goal_grid_ ***/
-			//cout << "goal grid: " << endl;
+			cout << "GOAL GRID: " << endl;
 			for(int row = 0 ; row < GOAL_GRID_H; row++){
 				for(int col = 0; col < GOAL_GRID_W; col++){
 					pdf[i] = prev+goal_grid_[row][col];
 					prev += goal_grid_[row][col];
 					i++;
-					//cout << goal_grid_[row][col] << " ";
+					cout << goal_grid_[row][col] << " ";
 				}
-				//cout << endl;
+				cout << endl;
 			}
 			srand(time(NULL));
 			// get random number between 0.0 and 1.0
 			double randNum = randDouble(0.0, 1.0);
-			//cout << "		randNum: " << randNum << endl;
 			int gridCell = 0; 
+
 			// find which grid cell was chosen
+			// CONVENTION: goal_grid enumeration goes from left to right starting at 1 and going to GOAL_GRID_H*GOAL_GRID_W
 			for(int i = 0; i < GOAL_GRID_H*GOAL_GRID_W; i++){
 				if(i == 0 && randNum <= pdf[i]){
 					gridCell = i+1;
@@ -518,7 +513,6 @@ class CloudGoalPublisher {
 					break;
 				}
 			}
-			//cout << "		gridCell: " << gridCell << endl;
 			// convert grid cell to row, col for indexing into image plane
 			//gridCell = 10;
 			int row = 0, col = 0;
@@ -528,7 +522,9 @@ class CloudGoalPublisher {
 				row++;
 			}
 			col = tmpCell-1;
-			//cout << "		row = " << row << ", col = " << col << endl;
+			// store the chosen goal_row and goal_col for future reference
+			goal_row_ = row;
+			goal_col_ = col;
 			// upper left corner of ROI
 			double rect_h = (double)CAMERA_IMG_H/(double)GOAL_GRID_H; double rect_w = (double)CAMERA_IMG_W/(double)GOAL_GRID_W;
 			double ul_corner_x = col*rect_w; double ul_corner_y = row*rect_h; 
@@ -536,23 +532,52 @@ class CloudGoalPublisher {
 
 			// store center of ROI 
 			cv::Mat centroid = (cv::Mat_<double>(3,1) << ul_corner_x+(rect_w/2.0), ul_corner_y+(rect_h/2.0), 1.0);
-			//cout << "		centroid: (" << centroid.at<double>(0,0) << ", " << centroid.at<double>(1,0) << ")\n";
 
 			// get real-world (x,y) coordinates using homography inverse
 			cv::Mat result = homography_inverse_*centroid;
 			double x = result.at<double>(0,0)/result.at<double>(2,0);
 			double y = result.at<double>(1,0)/result.at<double>(2,0);
-			//cout << "		homography centroid: (" << x << ", " << y << ")\n";
 
 			// set goal point
 			goal_pt_.x = x;
 			goal_pt_.y = y;
-			goal_pt_.z = 0.0;												
-			//cout << "		New goal point: (" << goal_pt_.x << ", " << goal_pt_.y << ", " << goal_pt_.z << ")\n";	
-			//cout << "		Publishing goal marker..." << endl;
+			goal_pt_.z = 0.0;										
 
 			// publish goal marker for rviz visualization
 			publishGoalMarker(goal_pt_, 0.05, 0.05, 0.05, 0.0, 1.0, 0.0);	
+		}
+
+		/* This function updates the goal grid probabilities given that the robot tried 
+		 * to reach a goal_pt_ but was unable to do so after N attempts.
+		 * Algorithm:
+		 * 		old_prob = get current probability associated with goal_pt_ using goal_row_, goal_col_
+		 * 		current probability decreased by (old_prob)^2
+		 * 		compute how much need to add to all other grid locations to keep sum(all grid location probabilities) = 1
+		 * 		update all other grid locations with need addition
+		 */
+		void updateGoalGrid(){
+			cout << "PREVIOUS GOAL GRID:" << endl;
+			for(int row = 0; row < GOAL_GRID_H; row++){
+				for(int col = 0; col < GOAL_GRID_W; col++){
+					cout << goal_grid_[row][col] << " ";
+				}
+				cout << endl;
+			}
+			double old_goal_prob = goal_grid_[goal_row_][goal_col_];
+			goal_grid_[goal_row_][goal_col_] -= pow(old_goal_prob,2);
+			double addition = (old_goal_prob - goal_grid_[goal_row_][goal_col_])/(GOAL_GRID_W*GOAL_GRID_H-1);
+			int count = 0;
+			for(int row = 0; row < GOAL_GRID_H; row++){
+				for(int col = 0; col < GOAL_GRID_W; col++){
+					if(row == goal_row_ && col == goal_col_){
+						goal_grid_[row][col] += 0.0;								//TODO stupid hack 
+					}else{
+						goal_grid_[row][col] += addition;
+						count++;
+					}
+				}
+			}
+			cout << "changed " << count << " items in the goal_grid table" << endl;
 		}
 
 		/* Broadcasts the homography transform and calls the cloud cam publisher 
@@ -570,11 +595,9 @@ class CloudGoalPublisher {
 			  ros::Duration(10.0).sleep();
 			}
 
+			// get lower left-hand corner of the roach 
 			tf::Vector3 ll(-0.055, 0.035, -0.08);
 			tf::Stamped<tf::Pose> ll_corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), ll), ros::Time(0), ar_marker);
-			//tf::Stamped<tf::Pose> tf_ll_corner;
-			// transform lower left hand point of roach from ar_marker to usb_cam frame
-			//transform_listener.transformPose("usb_cam", ll_corner, tf_ll_corner);
 
 			// publish homography transform
 			tf::Transform hom_transform;
@@ -649,12 +672,23 @@ class CloudGoalPublisher {
 						setGoal = true;
 					}else if (!success_.data && setGoal){
 						setGoal = false;
+					}else if(!success_.data && fail_flag_.data && !setGoal){
+						cout << "		CloudGoal: Roach FAILED to reached goal --> updating goal grid & setting new goal..." << endl;
+						updateGoalGrid();
+						assignGoal(ar_marker);
+						setGoal = true;
 					}
 					// publish either updated goal or old goal
 					goal_pub_.publish(goal_pt_);
 
 					cout << "		setGoal = ";
 					if(setGoal)
+						cout << "TRUE" << endl;
+					else
+						cout << "FALSE" << endl;
+
+					cout << "		fail_flag_.data = ";
+					if(fail_flag_.data)
 						cout << "TRUE" << endl;
 					else
 						cout << "FALSE" << endl;
