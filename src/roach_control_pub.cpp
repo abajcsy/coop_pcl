@@ -93,11 +93,11 @@ class RoachController {
 
 	public:
 
-		RoachController(){
+		RoachController(string robot_namespace){
 			ros::NodeHandle nh;
 			nh_ = nh;
 
-			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("robot0/cmd_vel", 1);
+			cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>(robot_namespace+"/cmd_vel", 1);
 			success_pub_ = nh_.advertise<std_msgs::Bool>("success",1);
 			fail_pub_ = nh_.advertise<std_msgs::Bool>("fail",1);
 			goal_sub_ = nh_.subscribe<geometry_msgs::Point>("goal_pt", 1000, &RoachController::setGoal, this);	
@@ -246,7 +246,7 @@ class RoachController {
 										cout << "		checked for end condition...\n";
 									}else{
 										counter++;
-										if(counter == 5){
+										if(counter == 2){
 											cout << "		done turning...\n";
 											// stop turning
 											base_cmd.angular.z = 0.0;
@@ -296,7 +296,7 @@ int main(int argc, char** argv){
 	// Initialize ROS
 	ros::init(argc, argv, "roach_control");
 
-	RoachController controller;
+	RoachController controller("robot1");
 	controller.explore();
 }
 
