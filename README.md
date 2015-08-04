@@ -7,7 +7,7 @@ The two main cpp files involved are cloud_goal_pub.cpp and roach_control_pub.cpp
 
 The communication between cloud_goal_pub.cpp and roach_control_pub.cpp and the VelociRoACH follows the below diagram:
 
-![alt tag](https://github.com/abajcsy/coop_pcl/tree/master/resources/flowchart.png)
+![alt tag](https://raw.github.com/abajcsy/coop_pcl/master/resources/flowchart.png)
 
 Code is written in C++ and Python and is using [ROS Indigo].
 
@@ -73,7 +73,7 @@ Developed during Summer 2015 as part of SUPERB-ITS REU Program in the [Biomimeti
 [pcl]: http://wiki.ros.org/pcl
 [perception_pcl]: http://wiki.ros.org/perception_pcl
 [man_joy_override]: https://github.com/abuchan/man_joy_override
-[roach_hat.png]: https://github.com/abajcsy/coop_pcl/tree/master/resources
+[roach_hat.png]: https://github.com/abajcsy/coop_pcl/blob/master/resources/roach_hat.png
 [VelociRoACHes]: http://robotics.eecs.berkeley.edu/~ronf/Ambulation/
 [Biomimetic Millisystems Lab]: http://robotics.eecs.berkeley.edu/~ronf/Biomimetics.html
 [ROS Indigo]: http://wiki.ros.org/indigo
