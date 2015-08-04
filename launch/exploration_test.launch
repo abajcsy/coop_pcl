@@ -25,7 +25,7 @@
 <arg name="bundle_markers" value="ar_marker_0 ar_marker_1 ar_marker_2 ar_marker_3 ar_marker_4" />
 <include ns="usb_cam" file="$(find experiment_calib)/launch/ar_track.launch">
     <arg name="camera" value="/usb_cam" />
-  </include>
+</include>
 <node name="filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg bundle_markers)" />
 <node name="tracker" pkg="experiment_calib" type="track_bundle.py" args="usb_cam $(find experiment_calib)/data/roach_hat_calib_NEW.bag" output="screen" />
 
@@ -36,13 +36,14 @@
 <arg name="resolution" default="0.005" /> 
 <node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
-<!-- RUN RVIZ -->
-<node name="rviz" pkg="rviz" type="rviz" />
-
 <!-- PUBLISH TWIST MESSAGE FOR ROBOT WALK -->
-<node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" /> 
+<arg name="robot_name" default="robot1"/>		
+<node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" args="$(arg robot_name)" /> 
 
 <!-- CONTROL VELOCIROACH -->
 <node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" /> 
+
+<!-- RUN RVIZ -->
+<node name="rviz" pkg="rviz" type="rviz" />
 
 </launch>

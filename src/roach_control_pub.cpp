@@ -141,8 +141,10 @@ class RoachController {
 			int attempt_counter = 0;
 			double prev_dist = 0;
 
-			ros::Rate loop_rate(0.5);
-			while(nh_.ok()){
+			int input = 'c';
+
+			ros::Rate loop_rate(2);
+			while(nh_.ok() && input != 'q'){
 				cout << "ROACH_CONTROL_PUB: In explore():\n";
 				// wait until we successfully looked up transform before doing computations
 				if(!got_transform){
@@ -287,6 +289,20 @@ class RoachController {
 
 				ros::spinOnce();
 				loop_rate.sleep();
+
+				// if program was terminated, set velocity to be 0 and kill node
+				if(input == 'q') {	
+					cout << "Finished controlling VelociRoACH.\n";
+
+					// stop robot from moving
+					base_cmd.linear.x = 0.0;   
+					base_cmd.angular.z = 0.0;
+					cmd_vel_pub_.publish(base_cmd);	
+
+					resetKeyboardSettings();
+					cout << "Reset keyboard settings and shutting down.\n";
+					ros::shutdown();
+				}
 			}
 		}
 
@@ -296,7 +312,15 @@ int main(int argc, char** argv){
 	// Initialize ROS
 	ros::init(argc, argv, "roach_control");
 
-	RoachController controller("robot1");
+	// Sanity check
+	if(argc != 2){
+		ROS_ERROR("Not enough arguments! Usage example: roach_control_pub robot0");
+		ros::shutdown();
+	}
+
+	string robot_name = argv[1];
+
+	RoachController controller(robot_name);
 	controller.explore();
 }
 

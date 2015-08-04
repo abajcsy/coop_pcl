@@ -238,7 +238,7 @@ class CloudGoalPublisher {
 
 		/* Publishes group of markers for RVIZ with cubes of sidelength and (r,g,b) color
 		 */
-		void publishMarkerArray(vector<geometry_msgs::Point> pts, double sideLen, double r, double g, double b){
+		void publishMarkerArray(vector<geometry_msgs::Point> pts, string frameID, double sideLen, double r, double g, double b){
 			// set up MarkerArray for visualizing in RVIZ
 			visualization_msgs::MarkerArray marker_array_msg;
 			marker_array_msg.markers.resize(pts.size());
@@ -248,7 +248,7 @@ class CloudGoalPublisher {
 				double y = pts[i].y;
 				double z = pts[i].z;	
 
-				marker_array_msg.markers[i].header.frame_id = "usb_cam";
+				marker_array_msg.markers[i].header.frame_id = frameID;
 				marker_array_msg.markers[i].header.stamp = ros::Time();
 				marker_array_msg.markers[i].ns = "my_namespace";
 				marker_array_msg.markers[i].id = i; 
@@ -354,7 +354,7 @@ class CloudGoalPublisher {
 				cv::Point2f img_pt(trans_pt_xyz1.at<double>(0,0)/trans_pt_xyz1.at<double>(2,0), trans_pt_xyz1.at<double>(1,0)/trans_pt_xyz1.at<double>(2,0));
 				img_corners.push_back(img_pt);
 			}
-			publishMarkerArray(roach_pts, 0.02, 0.0, 0.0, 1.0);
+			publishMarkerArray(roach_pts, "usb_cam", 0.02, 0.0, 0.0, 1.0);
 
 			cout << "		Pixel-coords Roach corners:" << endl;
 			for(int i = 0; i < img_corners.size(); i++){
@@ -462,7 +462,7 @@ class CloudGoalPublisher {
 					cv::Mat result = homography_inverse_*vec;
 					double pt_x = result.at<double>(0,0)/result.at<double>(2,0); 
 					double pt_y = result.at<double>(1,0)/result.at<double>(2,0);
-					cout << "(u = " << u  << ", v = " << v << "), (pt_x = " << pt_x << ", pt_y = " << pt_y << ")\n";
+					//cout << "(u = " << u  << ", v = " << v << "), (pt_x = " << pt_x << ", pt_y = " << pt_y << ")\n";
 					hom_cloud_->points[hom_num_pts].x = pt_x;
 					hom_cloud_->points[hom_num_pts].y = pt_y;
 					hom_cloud_->points[hom_num_pts].z = 0.0;	
@@ -608,6 +608,91 @@ class CloudGoalPublisher {
 			return ll_corner;
 		}
 
+		/* This function to defines the size of the bounding box for the octree to be 
+		 * the size of the homography_plane (in meters).
+		 */
+		void setOctreeBoundingBox(){
+			// get lower right-hand corner and upper-rleft hand corner of camera image in homography_plane coordaintes
+			double lr_data[3] = {CAMERA_IMG_W, CAMERA_IMG_H, 1.0},
+				   ul_data[3] = {0, 0, 1.0},
+				   ur_data[3] = {CAMERA_IMG_W, 0, 1.0},
+				   ll_data[3] = {0, CAMERA_IMG_H, 1.0};
+			cv::Mat lr_vec = cv::Mat(3,1, CV_64F, lr_data),
+					ul_vec = cv::Mat(3,1, CV_64F, ul_data),
+					ur_vec = cv::Mat(3,1, CV_64F, ur_data),
+					ll_vec = cv::Mat(3,1, CV_64F, ll_data);
+			cv::Mat lr_result = homography_inverse_*lr_vec,
+					ul_result = homography_inverse_*ul_vec,
+					ur_result = homography_inverse_*ur_vec,
+					ll_result = homography_inverse_*ll_vec;
+			double lr_pt_x = lr_result.at<double>(0,0)/lr_result.at<double>(2,0),
+					lr_pt_y = lr_result.at<double>(1,0)/lr_result.at<double>(2,0);
+			double ul_pt_x = ul_result.at<double>(0,0)/ul_result.at<double>(2,0),
+					ul_pt_y = ul_result.at<double>(1,0)/ul_result.at<double>(2,0);
+			double ur_pt_x = ur_result.at<double>(0,0)/ur_result.at<double>(2,0),
+					ur_pt_y = ur_result.at<double>(1,0)/ur_result.at<double>(2,0);
+			double ll_pt_x = ll_result.at<double>(0,0)/ll_result.at<double>(2,0),
+					ll_pt_y = ll_result.at<double>(1,0)/ll_result.at<double>(2,0);
+
+			// set max_z to be the height of the homography plane
+			double min_x = lr_pt_x, min_y = lr_pt_y, min_z = 0.0, 
+				   max_x = ul_pt_x, max_y = ul_pt_y, max_z = abs(ul_pt_y-lr_pt_y)/2.0; 
+			cout << "min_x: " << min_x << ", min_y: " << min_y << endl;
+			cout << "max_x: " << max_x << ", max_y: " << max_y << ", max_z: " << max_z << endl;
+			cout << "homography plane area: " << abs(min_x - max_x)*abs(min_y-max_y) << endl;
+
+			octree_search_->defineBoundingBox(min_x, min_y, min_z, max_x, max_y, max_z);
+
+			// sanity check!
+			double min_x_arg, min_y_arg, min_z_arg, max_x_arg, max_y_arg, max_z_arg; 
+			octree_search_->getBoundingBox(min_x_arg, min_y_arg, min_z_arg, max_x_arg, max_y_arg, max_z_arg);
+
+			vector<geometry_msgs::Point> octree_pts;
+			geometry_msgs::Point ll, lr, ul, ur;
+			lr.x = min_x_arg; lr.y = min_y_arg; lr.z = min_z_arg;
+			ul.x = max_x_arg; ul.y = max_y_arg; ul.z = max_z_arg;	
+
+			ll.x = min_x_arg; ll.y = max_y_arg; ll.z = min_z_arg;
+			ur.x = max_x_arg; ur.y = min_y_arg; ur.z = min_z_arg;	
+
+			octree_pts.push_back(lr);
+			octree_pts.push_back(ul);
+			//octree_pts.push_back(ll);
+			//octree_pts.push_back(ur);
+			//publishMarkerArray(octree_pts, "homography_plane", 0.02, 0.0, 0.0, 1.0);
+		}
+
+		/* Queries octree generated from point cloud at resolution of 1/2 roach height 
+		 * and computes the ratio of occupied voxel regions to the total possible voxels.
+		 * Ideally, we want to see the ratio approach 1 the longer the roach explores...
+		 */
+		double computeCoverageRatio(){
+			// get octree max and min points from bounding box
+			double min_x_arg, min_y_arg, min_z_arg, max_x_arg, max_y_arg, max_z_arg; 
+			octree_search_->getBoundingBox(min_x_arg, min_y_arg, min_z_arg, max_x_arg, max_y_arg, max_z_arg);
+			// treat resolution of octree as our increment (should be 1/2 size of the velociroach length)
+			double resolution = octree_search_->getResolution();
+
+			double total_regions = 0.0;
+			double occupied_regions = 0.0;
+			for(double x = max_x_arg; x > min_x_arg; x -= resolution){
+				for(double y = max_y_arg; y > min_y_arg; y -= resolution){
+					for(double z = min_z_arg; z < max_z_arg; z += resolution){
+						Eigen::Vector3f min_pt(x-resolution, y-resolution, z);
+						Eigen::Vector3f max_pt(x, y, z+resolution);
+						vector<int> k_indices;
+						int num_pts = octree_search_->boxSearch(min_pt, max_pt, k_indices);
+						if(num_pts > 0){
+							occupied_regions++;
+						}
+						total_regions++;
+					}
+				}
+			}
+			double coverage_ratio = occupied_regions/total_regions;
+			cout << "IN COMPUTE COVERAGE RATIO: occupied_regions = " << occupied_regions << ", total_regions = " << total_regions << ", coverage_ratio = " << coverage_ratio << endl;
+		}
+	
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
 		 *
 		 * NOTE: roach_control_pub's exploration method needs to run at lower Hz then 
@@ -633,6 +718,8 @@ class CloudGoalPublisher {
 			setCamCloud();
 
 			assignGoal(ar_marker);
+			// setup max octree bounding box to be the size of the homography_plane
+			//setOctreeBoundingBox();
 			/***********************************************************************************/
 
 			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
@@ -727,11 +814,26 @@ class CloudGoalPublisher {
 				//cout << "		Finished publishing point cloud..." << endl;
 				/*********************************************************/
 
+				//double coverage_ratio = computeCoverageRatio();
 				ros::spinOnce();
 				loop_rate.sleep();
+
+				// if program was terminated or point cloud filled, save out the point cloud and end program 
+				if(input == 'q' || num_pts >= cloud_->points.size()) {	
+					cout << "Finished gathering and publishing point cloud.\n";
+
+					if(pcd_filename.compare("NULL") != 0){
+						pcl::io::savePCDFileASCII(pcd_filename, *cloud_);
+					  	cout << "Saved " << num_pts << " points out of total point cloud space of " << cloud_->points.size() << " to " << pcd_filename << endl;				
+					}else{
+						cout << "User specified NOT to save point cloud.\n";
+					}
+					resetKeyboardSettings();
+					cout << "Reset keyboard settings and shutting down.\n";
+					ros::shutdown();
+				}
 			}
 		}
-
 };
 
 /* Initializes ROS node and runs main functionality
