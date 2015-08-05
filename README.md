@@ -1,7 +1,7 @@
 Point Cloud Generation and Terrain Navigation Using Cooperative Millirobots
 =============
 
-This project includes code and resources for cooperative point cloud generation and terrain exploration with [VelociRoACHes]. In this project, we address the problem of efficiently generating a 3D terrain map by utilizing two inexpensive millirobots, one that acts as a master and the other as an explorer, and a single webcam. Subproblems we address include estimating depth, planning exploration paths, and constructing the 3D terrain map. We take a purely computer vision approach to terrain mapping.  The master robot (represented by the single webcam) watches the explorer robot (the VelociRoACH) walk through the scene. We generate the point cloud based on the explorer robot movement. A human operator can then plan a path for the master robot to safely move through the explored scene. 
+This project includes code and resources for cooperative point cloud generation and terrain exploration with [VelociRoACH] millirobots. In this project, we address the problem of efficiently generating a 3D terrain map by utilizing two inexpensive millirobots, one that acts as a master and the other as an explorer, and a single webcam. Subproblems we address include estimating depth, planning exploration paths, and constructing the 3D terrain map. We take a purely computer vision approach to terrain mapping.  The master robot (represented by the single webcam) watches the explorer robot (the VelociRoACH) walk through the scene. We generate the point cloud based on the explorer robot movement. A human operator can then plan a path for the master robot to safely move through the explored scene. 
 
 The two main cpp files involved are cloud_goal_pub.cpp and roach_control_pub.cpp. Our goal assignment algorithm within cloud_goal_pub.cpp guarantees that the explorer robot is only assigned goal locations within the FOV of the camera. Initially, each location within the FOV is equally likely to be selected as a goal location. However, if the explorer robot fails to successfully reach a goal location within N tries, the probability of assigning that location again decreases by the probability squared. 
 
@@ -13,12 +13,14 @@ Code is written in C++ and Python and is using [ROS Indigo].
 
 Dependencies
 -------
-If you're using catkin_make, navigate to the /src directory in your ros workspace and type 'git clone' followed by the http://... website to each of the following github repositories. Then, navigate up one folder level to your ros workspace and type 'catkin_make'.
+In order to run all the functionality of this project, clone the following projects into your ros workspace: 
 * [ar_track_alvar]
 * [experiment_calib]
 * [pcl]
 * [perception_pcl]
 * [man_joy_override]
+
+If you're using catkin_make, navigate to the /src directory in your ros workspace and type 'git clone' followed by the http://... website to each of the following github repositories. Then, navigate up one folder level to your ros workspace and type 'catkin_make'.
 
 Example:
 ```bash
@@ -37,7 +39,7 @@ What You Need
 
 Running the ROS Nodes
 -------
-* To run the cloud_goal_pub and roach_control_pub nodes as well as rviz and AR tracking:
+* To run the project, including AR tracking, cloud_goal_pub, roach_control_pub, and RVIZ nodes:
 ```bash
 roslaunch coop_pcl exploration_test.launch
 ```
@@ -66,7 +68,7 @@ Arguments
 
 Extra Info
 -------
-Developed during Summer 2015 as part of SUPERB-ITS REU Program in the [Biomimetic Millisystems Lab], UC Berkeley. 
+Developed during Summer 2015 as part of SUPERB-ITS NSF REU Program in the [Biomimetic Millisystems Lab], UC Berkeley. 
 
 [ar_track_alvar]: http://wiki.ros.org/ar_track_alvar
 [experiment_calib]: https://github.com/abuchan/experiment_calib 
@@ -74,7 +76,7 @@ Developed during Summer 2015 as part of SUPERB-ITS REU Program in the [Biomimeti
 [perception_pcl]: http://wiki.ros.org/perception_pcl
 [man_joy_override]: https://github.com/abuchan/man_joy_override
 [roach_hat.png]: https://github.com/abajcsy/coop_pcl/blob/master/resources/roach_hat.png
-[VelociRoACHes]: http://robotics.eecs.berkeley.edu/~ronf/Ambulation/
+[VelociRoACH]: http://robotics.eecs.berkeley.edu/~ronf/Ambulation/
 [Biomimetic Millisystems Lab]: http://robotics.eecs.berkeley.edu/~ronf/Biomimetics.html
 [ROS Indigo]: http://wiki.ros.org/indigo
 
