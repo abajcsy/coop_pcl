@@ -118,6 +118,9 @@ target_link_libraries(roach_control_pub ${catkin_LIBRARIES})
 add_executable(planar_segmentation src/planar_segmentation.cpp)
 target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
 
+add_executable(greedy_projection src/greedy_projection.cpp)
+target_link_libraries(greedy_projection ${catkin_LIBRARIES})
+
 add_dependencies(pcl_publisher coop_pcl_generate_messages_cpp)
 
 #add_executable(pcl_stats src/pcl_stats.cpp)
