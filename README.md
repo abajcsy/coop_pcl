@@ -72,7 +72,7 @@ Developed during Summer 2015 as part of SUPERB-ITS NSF REU Program in the [Biomi
 
 [ar_track_alvar]: http://wiki.ros.org/ar_track_alvar
 [experiment_calib]: https://github.com/abuchan/experiment_calib 
-[pcl]: http://wiki.ros.org/pcl
+[pcl]: https://github.com/PointCloudLibrary/pcl
 [perception_pcl]: http://wiki.ros.org/perception_pcl
 [man_joy_override]: https://github.com/abuchan/man_joy_override
 [roach_hat.png]: https://github.com/abajcsy/coop_pcl/blob/master/resources/roach_hat.png
