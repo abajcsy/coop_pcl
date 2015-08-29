@@ -6,13 +6,13 @@
 
 <!-- RUN USB CAM -->
 <node name="usb_cam" pkg="usb_cam" type="usb_cam_node" output="screen" >
-    <param name="video_device" value="/dev/video0" />
+    <param name="video_device" value="/dev/video1" />
     <param name="image_width" value="640" />
     <param name="image_height" value="480" />
     <param name="pixel_format" value="mjpeg" />
     <param name="camera_frame_id" value="usb_cam" />
     <param name="io_method" value="mmap" />
-    <param name="camera_info_url" value="file:///home/humanoid/.ros/camera_info/head_camera.yaml" />
+    <param name="camera_info_url" value="file:///home/andrea/.ros/camera_info/head_camera.yaml" />
 </node>
 
 <!-- VISUALIZE USB CAM -->
@@ -37,7 +37,7 @@
 <node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
 <!-- PUBLISH TWIST MESSAGE FOR ROBOT WALK -->
-<arg name="robot_name" default="robot1"/>		
+<arg name="robot_name" default="robot0"/>		
 <node name="controller" pkg="coop_pcl" type="roach_control_pub" output="screen" args="$(arg robot_name)" /> 
 
 <!-- CONTROL VELOCIROACH -->
