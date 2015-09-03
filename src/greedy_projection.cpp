@@ -5,13 +5,14 @@
 #include <pcl/surface/gp3.h>
 #include <pcl/io/vtk_io.h>
 
-int
-main (int argc, char** argv)
-{
+using namespace std;
+
+int main (int argc, char** argv) {
+  string filepath = "/home/andrea/ros_workspace/src/coop_pcl/data/";
   // Load input file into a PointCloud<T> with an appropriate type
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PCLPointCloud2 cloud_blob;
-  pcl::io::loadPCDFile ("bun0.pcd", cloud_blob);
+  pcl::io::loadPCDFile (filepath + "pcd/bun0.pcd", cloud_blob);
   pcl::fromPCLPointCloud2 (cloud_blob, *cloud);
   //* the data should be available in cloud
 
@@ -59,7 +60,7 @@ main (int argc, char** argv)
   std::vector<int> parts = gp3.getPartIDs();
   std::vector<int> states = gp3.getPointStates();
 
-  saveVTKFile ("mesh.vtk", triangles);
+  pcl::io::saveVTKFile(filepath+"vtk/mesh.vtk", triangles);
 
   // Finish
   return (0);
