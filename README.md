@@ -61,6 +61,7 @@ rosrun pcl_ros pcd_to_pointcloud test_pcd.pcd 0.1 _frame_id:=/map
 ```bash
 roslaunch coop_pcl octree_visual_test.launch
 ```
+* To visualize .vtk files produced by greedy_projection.cpp, download [ParaView]. 
 
 Arguments
 -------
@@ -86,3 +87,4 @@ Developed during Summer 2015 as part of SUPERB-ITS NSF REU Program in the [Biomi
 [Biomimetic Millisystems Lab]: http://robotics.eecs.berkeley.edu/~ronf/Biomimetics.html
 [ROS Indigo]: http://wiki.ros.org/indigo
 [monocular camera calibration]: http://wiki.ros.org/camera_calibration/Tutorials/MonocularCalibration
+[ParaView]: http://www.paraview.org/download/
