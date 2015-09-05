@@ -117,6 +117,9 @@ target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
 add_executable(greedy_projection src/greedy_projection.cpp)
 target_link_libraries(greedy_projection ${catkin_LIBRARIES})
 
+add_executable(project_inliers src/project_inliers.cpp)
+target_link_libraries(project_inliers ${catkin_LIBRARIES})
+
 #add_executable(pcl_stats src/pcl_stats.cpp)
 #target_link_libraries(pcl_stats ${catkin_LIBRARIES})
 

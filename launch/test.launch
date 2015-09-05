@@ -1,10 +1,13 @@
 <launch>
 
-<!-- SET UP STATIC TRANSFORMS 
+<!-- SET UP STATIC TRANSFORMS -->
 <arg name="pi/2" value="1.5707963267948966" />
 <arg name="optical_rotate" value="0 0 0.3 0 0.5 0" />
-<node pkg="tf" type="static_transform_publisher" name="map" args="$(arg optical_rotate) map usb_cam 100" /> -->
+<node pkg="tf" type="static_transform_publisher" name="map" args="$(arg optical_rotate) map usb_cam 100" /> 
 
-<node name="tri_mesh" pkg="coop_pcl" type="greedy_projection" output="screen" /> 
+<node name="projection" pkg="coop_pcl" type="project_inliers" output="screen" /> 
+
+<!-- RUN RVIZ -->
+<node name="rviz" pkg="rviz" type="rviz" />
 
 </launch>

@@ -4,6 +4,7 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl/surface/gp3.h>
 #include <pcl/io/vtk_io.h>
+#include <pcl/io/vtk_lib_io.h>
 
 using namespace std;
 
@@ -92,9 +93,11 @@ int main (int argc, char** argv) {
   /* TO VISUALIZE THE VTK FILE: 
    * Download open-source ParaView. I used Desktop version for Linux from: http://www.paraview.org/download/
    */
-  pcl::io::saveVTKFile(vtk_filepath, triangles);
+  //pcl::io::saveVTKFile(vtk_filepath, triangles);
+  pcl::io::savePolygonFileSTL(vtk_filepath, triangles); 
 
-  cout << "Finished constructing mesh and saving .vtk file to " << vtk_filepath << "!\n";
+  //cout << "Finished constructing mesh and saving .vtk file to " << vtk_filepath << "!\n";
+  cout << "Finished constructing mesh and saving .stl file to " << vtk_filepath << "!\n";
   // Finish
   return (0);
 }

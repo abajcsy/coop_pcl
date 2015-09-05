@@ -1,8 +1,8 @@
 <launch>
 
 <!-- CONVERT PCD FILE INTO MESH AND VTK FILE -->
-<arg name="pcd_filepath" default="/home/andrea/ros_workspace/src/coop_pcl/data/pcd/plane_rosbag.pcd"/>			
-<arg name="vtk_filepath" default="/home/andrea/ros_workspace/src/coop_pcl/data/vtk/mesh_plane4.vtk"/> 
+<arg name="pcd_filepath" default="/home/andrea/ros_workspace/src/coop_pcl/data/pcd/plane_projected.pcd"/>			
+<arg name="vtk_filepath" default="/home/andrea/ros_workspace/src/coop_pcl/data/vtk/mesh_projected.stl"/> 
 <node name="tri_mesh" pkg="coop_pcl" type="greedy_projection" output="screen" args="$(arg pcd_filepath) $(arg vtk_filepath)"/> 
 
 </launch>
