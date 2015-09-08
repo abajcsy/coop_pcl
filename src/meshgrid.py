@@ -3,8 +3,9 @@
 from digifab import *
 from digifab.src.plotter import Plotter
 
-def random_polygon_mesh(seed=42):
-  numpy.random.seed(seed)
+def random_polygon_mesh(seed=None):
+  if seed is not None:
+    numpy.random.seed(seed)
 
   pgon = PolyLine(10*numpy.random.rand(20,2)).hull()
 
@@ -28,15 +29,15 @@ def random_polygon_mesh(seed=42):
   return triangles
 
 # Plot PolyLine mesh of triangles, and boolean grid of dots
-def plot_triangle_grid(triangles, xs, ys, grid):
+def plot_triangle_grid(triangles, cxs, cys, grid):
   plotter = Plotter()
   triangles.plot(plotter)
-  for x_i in range(len(xs)):
-    for y_i in range(len(ys)):
+  for x_i in range(len(cxs)):
+    for y_i in range(len(cys)):
       if grid[x_i,y_i]:
-        plotter.ax.plot(xs[x_i],ys[y_i],'g.')
+        plotter.ax.plot(cxs[x_i],cys[y_i],'g.')
       else:
-        plotter.ax.plot(xs[x_i],ys[y_i],'r.')
+        plotter.ax.plot(cxs[x_i],cys[y_i],'r.')
   plotter.show()
 
 # Return true if given point is inside triangle
@@ -96,8 +97,87 @@ def grid_from_triangles(triangles, delta = 0.2):
   grid = corners[:-1,:-1] & corners[1:,:-1] & corners[:-1,1:] & corners[1:,1:]
   return cxs, cys, grid
 
-if __name__ == '__main__':
-  triangles = random_polygon_mesh()
-  xs,ys,grid = grid_from_triangles(triangles)
-  plot_triangle_grid(triangles, xs, ys, grid)
+# Returns a random [x,y] index in grid that is True
+def random_grid_index(grid):
+  xi,yi = numpy.meshgrid(range(grid.shape[0]),range(grid.shape[1]),indexing='ij')
+  xis, yis = xi[grid], yi[grid]
+  if len(xis) == 0:
+    return None
+  else:
+    idx = numpy.random.randint(len(xis))
+    return xis[idx],yis[idx]
 
+def dummy_filt(val):
+  return True
+
+def match_neighbors(grid, cell, filt=None):
+  if filt is None:
+    filt = dummy_filt
+  xi, yi = cell
+  x_max, y_max = grid.shape
+  neighbors = []
+  for i in range(max(0,xi-1),min(xi+1,x_max-1)+1):
+    for j in range(max(0,yi-1),min(yi+1,y_max-1)+1):
+      if (i,j) != cell and filt(grid[i,j]):
+        neighbors.append((i,j))
+  return neighbors
+
+def index_dist(a,b):
+  return ((a[0] - b[0])**2 + (a[1]-b[1])**2)**0.5
+
+def plan_path(grid, start=None, end=None):
+  if start is None:
+    start = random_grid_index(grid)
+  if end is None:
+    end = random_grid_index(grid)
+  assert(grid[start] and grid[end])
+  path_grid = numpy.inf * numpy.ones(grid.shape, dtype=numpy.int64)
+  path_grid[~grid] = numpy.nan
+  path_grid[start] = 0
+  front = [start]
+  while path_grid[end] == numpy.inf and front:
+    new_front = set()
+    for cell in front:
+      new_front.update(match_neighbors(path_grid, cell, numpy.isinf))
+    new_vals = numpy.zeros(len(new_front))
+    front = list(new_front)
+    for i in range(len(front)):
+      nbrs = match_neighbors(path_grid, front[i], numpy.isfinite)
+      dists = [path_grid[n] + index_dist(n, front[i]) for n in nbrs]
+      new_vals[i] = min(dists)
+    path_grid[zip(*front)] = new_vals
+
+  if path_grid[end] == numpy.inf:
+    return []
+  else:
+    path = [end]
+    while path_grid[path[-1]] != 0:
+      nbrs = match_neighbors(path_grid, path[-1])
+      vals = path_grid[zip(*nbrs)]
+      min_idx = numpy.nanargmin(path_grid[zip(*nbrs)])
+      path.append(nbrs[min_idx])
+    path.reverse()
+    return path, path_grid
+
+def show_path_grid(grid, path):
+  show_grid = numpy.zeros(grid.shape) == 1
+  show_grid[zip(*path)] = True
+  return show_grid
+
+def plot_path(triangles=None, start=None, end=None, delta=0.2):
+  if triangles is None:
+    triangles = random_polygon_mesh()
+  
+  cxs,cys,grid = grid_from_triangles(triangles, delta)
+  
+  if start is None:
+    start = random_grid_index(grid)
+  if end is None:
+    end = random_grid_index(grid)
+
+  path,_ = plan_path(grid,start,end)
+  
+  plot_triangle_grid(triangles,cxs,cys,show_path_grid(grid,path))
+
+if __name__ == '__main__':
+  plot_path(42)
