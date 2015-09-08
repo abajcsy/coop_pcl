@@ -6,6 +6,7 @@
 #include <pcl/io/vtk_io.h>
 #include <pcl/io/vtk_lib_io.h>
 #include <pcl/impl/point_types.hpp>
+#include <pcl/surface/simplification_remove_unused_vertices.h>
 
 #include <math.h>
 
@@ -15,7 +16,7 @@ using namespace std;
 
 /* Performs meshing on an input point cloud 
  */
-pcl::PolygonMesh mesh(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
+pcl::PolygonMesh mesh(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, double searchRad, double mu, int maxNN){
  // Normal estimation using standard method from PCL
   pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
   pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
@@ -41,17 +42,17 @@ pcl::PolygonMesh mesh(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
   pcl::PolygonMesh triangles;
 
   // Set the maximum distance between connected points (maximum edge length)
-  gp3.setSearchRadius(0.025);
+  gp3.setSearchRadius(searchRad);
 
   // Set typical values for the parameters
   /* Maximum acceptable distance for a point to be considered, 
    * relative to the distance of the nearest point (typical values 
    * are 50-100 and 2.5-3 or 1.5 for grids) 
    */
-  gp3.setMu(80.0);
+  gp3.setMu(mu);
   /* Determines how many neighbors are searched for 
    */
-  gp3.setMaximumNearestNeighbors(100);
+  gp3.setMaximumNearestNeighbors(maxNN);
   /* Maximum and minimum angles in each triangle. Minimum is NOT 
    * guaranteed but the maximum is. Typical values are 10 and 
    * 120 degrees (in radians) 
@@ -83,7 +84,7 @@ pcl::PolygonMesh mesh(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
 
 /* Converts an input .pcd file into a PolygonMesh structure. Saves resutling mesh as STL file.
  */
-pcl::PolygonMesh initalizeMesh(string pcd_filepath, string stl_filepath, bool saveSTL){
+pcl::PolygonMesh initalizeMesh(string pcd_filepath, string stl_filepath, double searchRad, double mu, int maxNN, bool saveSTL){
   // Load input file into a PointCloud<T> with an appropriate type
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PCLPointCloud2 cloud_blob;
@@ -92,7 +93,7 @@ pcl::PolygonMesh initalizeMesh(string pcd_filepath, string stl_filepath, bool sa
   //* the data should be available in cloud
 
   // perform the meshing on the input cloud
-  pcl::PolygonMesh triangles = mesh(cloud);
+  pcl::PolygonMesh triangles = mesh(cloud, searchRad, mu, maxNN);
 
   /* TO VISUALIZE THE VTK FILE: 
    * Download open-source ParaView. I used Desktop version for Linux from: http://www.paraview.org/download/
@@ -131,7 +132,7 @@ double computeAngle(pcl::PointXYZ p1, pcl::PointXYZ p2, pcl::PointXYZ p3){
 /* Filters out all interior points in PolygonMesh. Re-computes mesh after
  * filtering for cleaner final mesh structure. 
  */
-pcl::PolygonMesh filterMesh(pcl::PolygonMesh triangles){
+pcl::PolygonMesh filterMesh(pcl::PolygonMesh triangles, double searchRad, double mu, int maxNN){
   vector<pcl::Vertices> polygons = triangles.polygons;
 
   // convert from PCLPointCloud2 to PointCloud to access point cloud
@@ -209,7 +210,7 @@ pcl::PolygonMesh filterMesh(pcl::PolygonMesh triangles){
   }
 
   // perform meshing of the new filtered point cloud
-  return mesh(filt_cloud);
+  return mesh(filt_cloud, searchRad, mu, maxNN);
 }
 
 int main (int argc, char** argv) {
@@ -225,9 +226,13 @@ int main (int argc, char** argv) {
   cout << "pcd_filepath = " << pcd_filepath << endl;
   cout << "stl_filepath = " << stl_filepath << endl;
 
+  double searchRad = 0.025, searchRad_filt = 0.5;
+  double mu = 80.0, mu_filt = 80.0;
+  int maxNN = 100, maxNN_filt = 50;
   // get initial mesh from raw point cloud
-  pcl::PolygonMesh triangles = initalizeMesh(pcd_filepath, stl_filepath, false);
-  pcl::PolygonMesh filt_triangles = filterMesh(triangles);
+  pcl::PolygonMesh triangles = initalizeMesh(pcd_filepath, stl_filepath, searchRad, mu, maxNN, false);
+
+  pcl::PolygonMesh filt_triangles = filterMesh(triangles, searchRad_filt, mu_filt, maxNN_filt);
 
   pcl::io::savePolygonFileSTL(stl_filepath, filt_triangles); 
   cout << "Finished constructing mesh and saving .stl file to " << stl_filepath << "!\n";
