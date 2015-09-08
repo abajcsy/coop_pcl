@@ -39,10 +39,15 @@ What You Need
 
 Running the ROS Nodes
 -------
-* To run the project, including AR tracking, cloud_goal_pub, roach_control_pub, and RVIZ nodes:
+* To run the VelociRoACH exploration, including AR tracking, cloud_goal_pub, roach_control_pub, and RVIZ nodes:
 ```bash
 roslaunch coop_pcl exploration_test.launch
 ```
+* Once you have collected the point cloud from the exploration and saved the data to a .pcd file, run the cloud_to_mesh code. This  will project the raw cloud points to the 2D plane, perform the meshing, and then simplify the mesh by removing interior points:
+```bash
+roslaunch coop_pcl meshing_test.launch
+```
+
 
 Setup Warning
 -------
@@ -61,7 +66,7 @@ rosrun pcl_ros pcd_to_pointcloud test_pcd.pcd 0.1 _frame_id:=/map
 ```bash
 roslaunch coop_pcl octree_visual_test.launch
 ```
-* To visualize .vtk files produced by greedy_projection.cpp, download [ParaView]. 
+* To visualize .stl or .vtk files produced by greedy_projection.cpp, download [ParaView]. 
 
 Arguments
 -------
@@ -71,7 +76,12 @@ Arguments
 * 'cloud_width' - Number of points in cloud (NOTE: right now all clouds are unordered, so their size is always 1 x cloud_width). {default: 15000}
 
 #### roach_control_pub.cpp ####
-* 'robot_name' - Name of robot to publish twist commands to {default: "robot1"}
+* 'robot_name' - Name of robot to publish twist commands to {default: "robot0"}
+
+#### cloud_to_mesh.cpp ####
+* 'pcd_filepath' - Path to raw input point cloud data file {default: "/data/pcd/plane_rosbag.pcd"}
+* 'raw_stl_filepath' - Path to save out raw mesh .stl file {default: "/data/vtk/raw_plane_mesh.stl"}
+* 'stl_filepath' - Path to save out final filtered mesh .stl file {default: "/data/vtk/plane_mesh.stl"}
 
 Extra Info
 -------
