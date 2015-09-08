@@ -7,7 +7,7 @@
 
 <!-- RUN OCTREE VISUALIZER -->
 <!-- Usage: roslaunch coop_pcl octree_visual_test.launch resolution:="0.001" -->
-<arg name="pcd_file" default="/home/humanoid/ros_workspace/src/coop_pcl/resources/pcd/test_pcd2.pcd"/>
+<arg name="pcd_file" default="/home/abuchan/projects/pcl_ws/src/coop_pcl/resources/pcd/test_pcd2.pcd"/>
 <arg name="resolution" default="0.1" /> 
 <node name="octree_visualizer" pkg="coop_pcl" type="octree_visualizer" output="screen" args="$(arg pcd_file) $(arg resolution)"/>
 
