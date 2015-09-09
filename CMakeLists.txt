@@ -108,17 +108,21 @@ target_link_libraries(octree_visualizer ${catkin_LIBRARIES})
 
 add_executable(cloud_goal_pub src/cloud_goal_pub.cpp)
 target_link_libraries(cloud_goal_pub ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
 add_executable(roach_control_pub src/roach_control_pub.cpp)
 target_link_libraries(roach_control_pub ${catkin_LIBRARIES})
 
-add_executable(planar_segmentation src/planar_segmentation.cpp)
-target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
+add_executable(cloud_to_mesh src/cloud_to_mesh.cpp)
+target_link_libraries(cloud_to_mesh ${catkin_LIBRARIES})
 
-add_executable(greedy_projection src/greedy_projection.cpp)
-target_link_libraries(greedy_projection ${catkin_LIBRARIES})
+#add_executable(planar_segmentation src/planar_segmentation.cpp)
+#target_link_libraries(planar_segmentation ${catkin_LIBRARIES})
 
-add_executable(project_inliers src/project_inliers.cpp)
-target_link_libraries(project_inliers ${catkin_LIBRARIES})
+#add_executable(greedy_projection src/greedy_projection.cpp)
+#target_link_libraries(greedy_projection ${catkin_LIBRARIES})
+
+#add_executable(project_inliers src/project_inliers.cpp)
+#target_link_libraries(project_inliers ${catkin_LIBRARIES})
 
 #add_executable(pcl_stats src/pcl_stats.cpp)
 #target_link_libraries(pcl_stats ${catkin_LIBRARIES})
