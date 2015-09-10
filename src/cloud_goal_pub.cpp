@@ -297,13 +297,13 @@ class CloudGoalPublisher {
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(1.2));
 			  cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
 			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
-			  ros::Duration(10.0).sleep();
+			  ros::Duration(1.0).sleep();
 			}
 			vector<cv::Point2f> roach_corners, img_corners;
 			/*************** get real world measurements of roach corners in counter clockwise order ************/
@@ -470,7 +470,7 @@ class CloudGoalPublisher {
 				}
 			}
 			cout << "Finished setting up all homography plane points..." << endl;
-			hom_cloud_->header.stamp = ros::Time::now().toNSec();
+			pcl_conversions::toPCL(ros::Time::now(), hom_cloud_->header.stamp);
 		}
 
 		/* Assigns the next goal location by dividing the camera image plane into GOAL_GRID_H*GOAL_GRID_W
@@ -580,19 +580,19 @@ class CloudGoalPublisher {
 			cout << "changed " << count << " items in the goal_grid table" << endl;
 		}
 
-		/* Broadcasts the homography transform and calls the cloud cam publisher 
+		/* Returns the homography transform 
 		 */
 		tf::Transform getHomographyTransform(string ar_marker){
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(5.0));
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(1.2));
 			  //cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
 			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
-			  ros::Duration(10.0).sleep();
+			  ros::Duration(1.0).sleep();
 			}
 
 			// get lower left-hand corner of the roach 
@@ -733,8 +733,10 @@ class CloudGoalPublisher {
 					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
 					try{
 					  ros::Time now = ros::Time::now();
+					  transform_listener.waitForTransform("usb_cam", "homography_init", ros::Time::now(), ros::Duration(1.2));
 					  transform_listener.lookupTransform("usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
 					  setTransform = true;
+					  cout << "------SET TRANSFORM------" << endl;
 					}
 					catch (tf::TransformException ex){
 					  ROS_INFO("%s",ex.what());
@@ -743,6 +745,7 @@ class CloudGoalPublisher {
 					homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
 					// publish point cloud representing FOV of camera
 					hom_cloud_pub_.publish(hom_cloud_);
+					cout << "------PUBLISHED HOMOGRAPHY CLOUD------" << endl;
 
 					cout << "In run():" << endl;
 					cout << "		success_.data = ";
@@ -809,7 +812,7 @@ class CloudGoalPublisher {
 					}
 				}
 				//cout << "		Publishing point cloud.\n";
-				cloud_->header.stamp = ros::Time::now().toNSec();
+				pcl_conversions::toPCL(ros::Time::now(), cloud_->header.stamp);
 				cloud_pub_.publish(cloud_);
 				//cout << "		Finished publishing point cloud..." << endl;
 				/*********************************************************/
