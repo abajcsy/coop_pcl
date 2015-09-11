@@ -1,0 +1,7 @@
+<launch>
+
+<arg name="roach_bundle_markers" value="ar_marker_0 ar_marker_1 ar_marker_2 ar_marker_3 ar_marker_4" />
+<node name="roach_filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg roach_bundle_markers)" />
+<node name="roach_tracker" pkg="experiment_calib" type="track_bundle.py" args="usb_cam $(find experiment_calib)/data/roach_hat_calib_NEW.bag" output="screen" />
+
+</launch>

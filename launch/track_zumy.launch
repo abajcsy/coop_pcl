@@ -1,0 +1,12 @@
+<launch>
+
+<arg name="environment_bundle_markers" value="ar_marker_16 ar_marker_10 ar_marker_11 ar_marker_13 ar_marker_14 ar_marker_17" />
+
+<node name="environment_filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg environment_bundle_markers)" />
+
+<node name="environment_tracker" pkg="experiment_calib" type="track_bundle.py" args="usb_cam $(find experiment_calib)/data/environment.bag" output="screen" />
+
+<node pkg="coop_pcl" type="publish_zumy_pose.py" name="publish_zumy_pose" output="screen"/>
+
+<node pkg="tf" type="static_transform_publisher" name="zumy_pub" args="0.0 0.1 0.0 0.0 -1.57 0 usb_cam zumy 100" />
+</launch>
