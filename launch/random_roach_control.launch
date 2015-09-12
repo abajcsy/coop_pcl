@@ -1,0 +1,9 @@
+<launch>
+
+<arg name="robot_name" default="robot0" />
+
+<node pkg="man_joy_override" name="roach_bridge" type="roach_bridge.py" output="screen" />
+
+<node pkg="coop_pcl" name="roach_controller" type="random_roach_control.py" output="screen" />
+
+</launch>

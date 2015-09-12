@@ -1,0 +1,26 @@
+<launch>
+
+<arg name="mname" default="odroid1" />
+<arg name="device" value="/dev/video1" />
+
+<!-- RUN USB CAM -->
+<node name="usb_cam" pkg="usb_cam" type="usb_cam_node" output="screen" >
+    <param name="video_device" value="$(arg device)" />
+    <param name="image_width" value="640" />
+    <param name="image_height" value="480" />
+    <param name="pixel_format" value="mjpeg" />
+    <param name="camera_frame_id" value="usb_cam" />
+    <param name="io_method" value="mmap" />
+    <param name="camera_info_url" value="file:///home/abuchan/.ros/camera_info/head_camera.yaml" />
+</node>
+
+<!-- AR TRACKING -->
+<include ns="usb_cam" file="$(find experiment_calib)/launch/ar_track.launch">
+    <arg name="camera" value="/usb_cam" />
+</include>
+
+<!-- LOCALIZE CAMERA STATICALLY -->
+<arg name="optical_rotate" value="0 0 0.35 0 0 -2" />
+<node pkg="tf" type="static_transform_publisher" name="map" args="$(arg optical_rotate) map usb_cam 100" />
+
+</launch>

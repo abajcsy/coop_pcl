@@ -1,0 +1,12 @@
+<launch>
+
+<arg name="device" default="/dev/video1" />
+<arg name="mname" default="odroid1" />
+
+<include file="$(find odroid_machine)/launch/zumy_ar_track.launch">
+  <arg name="mname" value="$(arg mname)" />
+</include>
+
+<include file="$(find coop_pcl)/launch/track_zumy.launch" />
+
+</launch>

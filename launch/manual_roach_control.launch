@@ -1,0 +1,7 @@
+<launch>
+
+<arg name="robot_name" default="robot0" />
+
+<include file="$(find man_joy_override)/launch/velociroach_zumy.launch" />
+
+</launch>

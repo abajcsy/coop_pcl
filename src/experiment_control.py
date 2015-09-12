@@ -31,6 +31,7 @@ class ExperimentControl():
         self.state = 'saving'
       else:
         self.proxies['stuck'](0)
+        self.proxies['roach'](0)
         self.state = 'stuck'
 
     # If step == 1, end experiment and save, otherwise toggle to moving
@@ -39,6 +40,7 @@ class ExperimentControl():
         self.state = 'saving'
       else:
         self.proxies['stuck'](0)
+        self.proxies['roach'](0)
         self.state = 'moving'
 
     return StepResponse()
