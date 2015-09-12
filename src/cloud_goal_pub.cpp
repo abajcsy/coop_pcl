@@ -142,7 +142,7 @@ class CloudGoalPublisher {
 			goal_pub_ = nh_.advertise<geometry_msgs::Point>("goal_pt", 1);
 			success_sub_ = nh_.subscribe<std_msgs::Bool>("success", 1000, &CloudGoalPublisher::setSuccess, this);
 			fail_sub_ = nh_.subscribe<std_msgs::Bool>("fail", 1000, &CloudGoalPublisher::setFail, this);
-			camera_info_sub_ = nh_.subscribe<sensor_msgs::CameraInfo>("usb_cam/camera_info", 1000, &CloudGoalPublisher::setP, this);
+			camera_info_sub_ = nh_.subscribe<sensor_msgs::CameraInfo>("/odroid1/usb_cam/camera_info", 1000, &CloudGoalPublisher::setP, this);
 
 			marker_pub_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 1);
 			marker_array_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
@@ -297,7 +297,7 @@ class CloudGoalPublisher {
 			tf::StampedTransform transform;
 			try{
 			  ros::Time now = ros::Time::now();
-			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(1.2));
+			  transform_listener.waitForTransform("usb_cam", ar_marker, now, ros::Duration(10));
 			  cout << "		Looking up tf from " << ar_marker << " to usb_cam...\n";
 			  transform_listener.lookupTransform("usb_cam", ar_marker, ros::Time(0), transform);
 			}
@@ -484,15 +484,15 @@ class CloudGoalPublisher {
 			double prev = 0;
 			int i = 0;
 			/*** print goal_grid_ ***/
-			cout << "GOAL GRID: " << endl;
+			//cout << "GOAL GRID: " << endl;
 			for(int row = 0 ; row < GOAL_GRID_H; row++){
 				for(int col = 0; col < GOAL_GRID_W; col++){
 					pdf[i] = prev+goal_grid_[row][col];
 					prev += goal_grid_[row][col];
 					i++;
-					cout << goal_grid_[row][col] << " ";
+					//cout << goal_grid_[row][col] << " ";
 				}
-				cout << endl;
+				//cout << endl;
 			}
 			srand(time(NULL));
 			// get random number between 0.0 and 1.0
@@ -556,13 +556,13 @@ class CloudGoalPublisher {
 		 * 		update all other grid locations with need addition
 		 */
 		void updateGoalGrid(){
-			cout << "PREVIOUS GOAL GRID:" << endl;
+			/*cout << "PREVIOUS GOAL GRID:" << endl;
 			for(int row = 0; row < GOAL_GRID_H; row++){
 				for(int col = 0; col < GOAL_GRID_W; col++){
 					cout << goal_grid_[row][col] << " ";
 				}
 				cout << endl;
-			}
+			}*/
 			double old_goal_prob = goal_grid_[goal_row_][goal_col_];
 			goal_grid_[goal_row_][goal_col_] -= pow(old_goal_prob,2);
 			double addition = (old_goal_prob - goal_grid_[goal_row_][goal_col_])/(GOAL_GRID_W*GOAL_GRID_H-1);
@@ -577,7 +577,7 @@ class CloudGoalPublisher {
 					}
 				}
 			}
-			cout << "changed " << count << " items in the goal_grid table" << endl;
+			//cout << "changed " << count << " items in the goal_grid table" << endl;
 		}
 
 		/* Returns the homography transform 
@@ -745,7 +745,8 @@ class CloudGoalPublisher {
 					homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
 					// publish point cloud representing FOV of camera
 					hom_cloud_pub_.publish(hom_cloud_);
-					cout << "------PUBLISHED HOMOGRAPHY CLOUD------" << endl;
+					
+          /*cout << "------PUBLISHED HOMOGRAPHY CLOUD------" << endl;
 
 					cout << "In run():" << endl;
 					cout << "		success_.data = ";
@@ -753,24 +754,25 @@ class CloudGoalPublisher {
 						cout << "TRUE" << endl;
 					else
 						cout << "FALSE" << endl;
+          */
 
 					/*************** GET GOAL FOR VELOCIROACH **************/
 					// if roach reached goal and haven't set new goal
 					if(success_.data && !setGoal){ 
-						cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
+						//cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
 						assignGoal(ar_marker);
 						setGoal = true;
 					}else if (!success_.data && setGoal){
 						setGoal = false;
 					}else if(!success_.data && fail_flag_.data && !setGoal){
-						cout << "		CloudGoal: Roach FAILED to reached goal --> updating goal grid & setting new goal..." << endl;
+						//cout << "		CloudGoal: Roach FAILED to reached goal --> updating goal grid & setting new goal..." << endl;
 						updateGoalGrid();
 						assignGoal(ar_marker);
 						setGoal = true;
 					}
 					// publish either updated goal or old goal
 					goal_pub_.publish(goal_pt_);
-
+          /*
 					cout << "		setGoal = ";
 					if(setGoal)
 						cout << "TRUE" << endl;
@@ -782,6 +784,7 @@ class CloudGoalPublisher {
 						cout << "TRUE" << endl;
 					else
 						cout << "FALSE" << endl;
+            */
 					/*******************************************************/	
 				}
 				

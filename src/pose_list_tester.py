@@ -5,9 +5,12 @@ import rospy
 from coop_pcl.srv import *
 from geometry_msgs.msg import PoseArray, Pose
 
+def ros_init():
+  rospy.init_node('pose_list_tester')
+  
 def add_poses(poses):
-  rospy.wait_for_service('add_poses')
-  add_poses_proxy = rospy.ServiceProxy('add_poses',AddPoses)
+  rospy.wait_for_service('/odroid1/add_poses')
+  add_poses_proxy = rospy.ServiceProxy('/odroid1/add_poses',AddPoses)
   
   pa = PoseArray()
   for pose in poses:

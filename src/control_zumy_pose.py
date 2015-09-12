@@ -10,15 +10,15 @@ from ar_track_alvar_msgs.msg import AlvarMarkers
 
 from coop_pcl.srv import *
 
-POS_EPS = 0.02
+POS_EPS = 0.04
 ANG_EPS = 0.5
 
 MIN_VEL = 0.1
-MAX_VEL = 0.15
+MAX_VEL = 0.12
 
-MAX_ANG = 0.1
+MAX_ANG = 0.12
 
-VEL_P = 0.2
+VEL_P = 0.5
 ANG_P = 0.2
 
 def pose_to_2d(pose):
@@ -30,7 +30,8 @@ def pose_to_2d(pose):
     q = pose.orientation
     R = [q.x,q.y,q.z,q.w]
   R = quaternion_matrix(R)
-  return numpy.array([T[0],T[1],numpy.arctan2(R[1,0],R[0,0])])
+  theta = numpy.arctan2(R[1,0],R[0,0]) + (numpy.pi * 2)
+  return numpy.array([T[0],T[1],theta])
 
 class ControlZumyPose():
   def __init__(self):
@@ -38,6 +39,7 @@ class ControlZumyPose():
     self.queue = PoseArray()
     self.lock = Condition()
     self.n_markers = 0
+    self.wait_count = 0
 
   def add_poses(self,msg):
     self.lock.acquire()
@@ -77,16 +79,20 @@ class ControlZumyPose():
         self.last_pose = None
 
       cmd_vel = Twist()
-     
+      self.wait_count += 1
+      print self.wait_count
+
       if self.last_pose is not None:
         pose_pub.publish(*self.last_pose)
 
-      if len(self.queue.poses) and self.last_pose is not None:
+      if int(self.wait_count/5)%2==0 and len(self.queue.poses) and self.last_pose is not None:
         goal_pose = pose_to_2d(self.queue.poses[0])
         goal_pub.publish(*goal_pose)
         pos_diff = (goal_pose - self.last_pose)[0:2]
         pos_err = sum(pos_diff**2)**0.5
-        ang_err = self.last_pose[2] - numpy.arctan2(pos_diff[1],pos_diff[0])
+        ang_goal = numpy.arctan2(pos_diff[1],pos_diff[0]) + (numpy.pi*2)
+        print pos_diff[0:2], ang_goal
+        ang_err = self.last_pose[2] - ang_goal 
         
         print pos_err, ang_err
 
@@ -99,9 +105,10 @@ class ControlZumyPose():
           self.lock.release()
         else:
           ang_cmd = - ANG_P * ang_err
-          if ang_err < ANG_EPS:
+          if abs(ang_err) < ANG_EPS:
             print 'forward'
             vel_cmd = VEL_P * pos_err
+            ang_cmd *= pos_err
           
         if vel_cmd > MAX_VEL:
           print 'clipping high vel'

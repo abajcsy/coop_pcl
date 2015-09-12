@@ -30,7 +30,7 @@
 // defines how close the roach needs to be to the goal to consider it having reached the goal
 // error margin defined in meters
 #define EPSILON 0.05	
-#define ATTEMPT_THRESH 10	
+#define ATTEMPT_THRESH 30	
 
 #define TURN 0
 #define FORWARD 1
@@ -145,14 +145,14 @@ class RoachController {
 
 			ros::Rate loop_rate(2);
 			while(nh_.ok() && input != 'q'){
-				cout << "ROACH_CONTROL_PUB: In explore():\n";
+				//cout << "ROACH_CONTROL_PUB: In explore():\n";
 				// wait until we successfully looked up transform before doing computations
 				if(!got_transform){
 					// get current location of roach
 					tf::StampedTransform path_transform;
 					try{
 					  ros::Time now = ros::Time::now();
-					  cout << "		Looking up tf from homography_plane to ar_marker...\n";
+					  //cout << "		Looking up tf from homography_plane to ar_marker...\n";
 					  transform_listener.lookupTransform(ar_marker, "homography_plane", ros::Time(0), path_transform);
 					  got_transform = true;
 					}
@@ -172,7 +172,7 @@ class RoachController {
 
 					// get center of roach in ar_marker frame
 					tf::Vector3 roach_center(0.0, 0.0, -0.08);	
-					cout << "-----> roach_center (ar_marker frame): (" << roach_center.getX() << ", " << roach_center.getY() << ", " << roach_center.getY() << ")\n";
+					//cout << "-----> roach_center (ar_marker frame): (" << roach_center.getX() << ", " << roach_center.getY() << ", " << roach_center.getY() << ")\n";
 
 					// convert goal_pt from homography_plane to ar_marker frame
 					tf::Vector3 goal_vec(goal_pt_.x,goal_pt_.y,goal_pt_.z);
@@ -185,7 +185,7 @@ class RoachController {
 					double goalY = tf_goal_pose.getOrigin().y();
 					double goalZ = tf_goal_pose.getOrigin().z();	
 
-					cout << "-----> goal_pose (ar_marker frame): (" << goalX << ", " << goalY << ", " << goalZ << ")\n";
+					//cout << "-----> goal_pose (ar_marker frame): (" << goalX << ", " << goalY << ", " << goalZ << ")\n";
 	
 					if(goal_pt_.x != -100 && goal_pt_.y != -100 && goal_pt_.z != -100){						
 						// get angle between robot x-axis and goal in radians 
@@ -194,17 +194,17 @@ class RoachController {
 						prev_dist = distance;
 						// get distance between center of robot and goal point
 						distance = sqrt(pow(goalX,2)+pow(goalY,2));
-						cout << "		angle = " << angle << ", distance = " << distance << endl;
+						//cout << "		angle = " << angle << ", distance = " << distance << endl;
 
 						// check each time if we're close enough to goal point
 						if(abs(distance) < EPSILON){
 								stage = TURN;
-								cout << "GOT TO GOAL!" << endl;
+								//cout << "GOT TO GOAL!" << endl;
 								base_cmd.linear.x = 0.0;
 								base_cmd.angular.z = 0.0;
 								success_.data = true;
 						}else{
-							cout << "====> attempt_counter = " << attempt_counter << ", prev_dist = " << prev_dist << ", distance = " << distance << endl;
+							//cout << "====> attempt_counter = " << attempt_counter << ", prev_dist = " << prev_dist << ", distance = " << distance << endl;
 							// if haven't moved significantly since the last attempt to move, increase attempt counter
 							if(abs(distance - prev_dist) < EPSILON){
 								attempt_counter++;
@@ -224,12 +224,18 @@ class RoachController {
 								success_.data = false;
 								// Turn stage
 								if(stage == TURN) {
-									cout << "................IN TURN STAGE................\n";
+									//cout << "................IN TURN STAGE................\n";
 									double goal = 0.0;
 									double error = angle;
-									cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
-									base_cmd.linear.x = 0.0;
-									base_cmd.angular.z = 1*error;
+									//cout << "		goal = " << goal << ", curr angle = " << angle << ", error (i.e. angle-goal) = " << error << endl;
+									if (attempt_counter < (ATTEMPT_THRESH/2)) {
+                    base_cmd.linear.x = 0.0;
+									  base_cmd.angular.z = 1*error;
+                  } else {
+                    base_cmd.linear.x = -0.5;
+									  base_cmd.angular.z = 0.0;
+                  }
+
 									// Threshold a velocity that is -0.2 < vel < 0.2 or -0.4 > vel > 0.4  
 									if(abs(base_cmd.angular.z) > 0.4){
 										if(base_cmd.angular.z < -0.4)
@@ -245,28 +251,35 @@ class RoachController {
 									// Check for end condition
 									if(error < -EPSILON || error > EPSILON){
 										counter = 0;
-										cout << "		checked for end condition...\n";
+										//cout << "		checked for end condition...\n";
 									}else{
-										counter++;
-										if(counter == 2){
-											cout << "		done turning...\n";
+										//counter++;
+										//if(counter == 2){
+											//cout << "		done turning...\n";
 											// stop turning
 											base_cmd.angular.z = 0.0;
 											// movement phase flag
 											stage = FORWARD; 
 											counter = 0;
-										}
+										//}
 									}
 								}
 								// Forward movement stage
 								if(stage == FORWARD){
-									cout << "................IN FORWARD STAGE................\n";
-									cout << "Current Distance from Goal =" << distance << endl;
+									//cout << "................IN FORWARD STAGE................\n";
+									//cout << "Current Distance from Goal =" << distance << endl;
 									// set speed
-									base_cmd.linear.x = 0.2;
+									if (attempt_counter < (ATTEMPT_THRESH/2)) {
+									  base_cmd.linear.x = 0.5;
+                    base_cmd.angular.z = 0.0;
+                  } else {
+									  base_cmd.linear.x = -0.5;
+                    base_cmd.angular.z = 0.0;
+                  }
+
 									if(abs(distance) < EPSILON){
 										stage = TURN;
-										cout << "GOT TO GOAL!" << endl;
+										//cout << "GOT TO GOAL!" << endl;
 										base_cmd.linear.x = 0.0;
 										base_cmd.angular.z = 0.0;
 										success_.data = true;
@@ -282,10 +295,12 @@ class RoachController {
 						success_.data = false;
 						success_pub_.publish(success_);
 					}
-					cout << "		Publishing linear vel: " << base_cmd.linear.x << ", Angular vel: " << base_cmd.angular.z << endl;
+					//cout << "		Publishing linear vel: " << base_cmd.linear.x << ", Angular vel: " << base_cmd.angular.z << endl;
 					// publish velocity commands to get roach towards goal
 					cmd_vel_pub_.publish(base_cmd);	
 				}
+        
+        cout << stage << ":" << attempt_counter << " " << distance << "," << angle << " - (" << base_cmd.linear.x << "," << base_cmd.angular.z << ")\n";
 
 				ros::spinOnce();
 				loop_rate.sleep();
