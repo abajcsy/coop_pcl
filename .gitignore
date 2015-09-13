@@ -1,5 +1,6 @@
 *.pyc
-resources/bag/*
-resources/pcl/*
+data
+resources/bag
+resources/pcd
 *.swp
 *~

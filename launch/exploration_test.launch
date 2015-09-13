@@ -5,7 +5,7 @@
 <arg name="device" default="/dev/video1" />
 <arg name="mname" default="odroid1" />
 
-<include file="$(find coop_pcl)/launch/($arg vision)_ar_track.launch">
+<include file="$(find coop_pcl)/launch/$(arg vision)_ar_track.launch">
   <arg name="device" value="$(arg device)" />
   <arg name="mname" value="$(arg mname)" />
 </include>
@@ -21,12 +21,23 @@
 <node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
 
 <!-- CONTROL VELOCIROACH (USE manual OR random OR position) -->
-<arg name="roach_controller" default="manual" />
+<arg name="roach_control" default="manual" />
 <arg name="robot_name" default="robot0" />
 
-<include file="$(find coop_pcl)/launch/$(arg roach_controller)_roach_controller.launch">
+<include file="$(find coop_pcl)/launch/$(arg roach_control)_roach_control.launch">
   <arg name="robot_name" value="$(arg robot_name)" />
 </include>
+
+
+<!-- EXPERIMENT CONTROL -->
+<node name="experiment_control" pkg="coop_pcl" type="experiment_control.py" output="screen" />
+<node name="stuck_counter" pkg="coop_pcl" type="stuck_counter.py" output="screen" />
+
+<!-- BAG RECORD -->
+<arg name="timestamp" default="" />
+<arg name="bag_path" default="$(find coop_pcl)/data/$(arg vision)_$(arg roach_control)_$(arg timestamp).bag" />
+<node pkg="rosbag" type="record" name="rosbag_record"
+  args="-O $(arg bag_path) /tf /stuck_poses /stuck" />
 
 <!-- RUN RVIZ -->
 <node name="rviz" pkg="rviz" type="rviz" args="-d $(find coop_pcl)/rviz/rviz_config.rviz"/>
