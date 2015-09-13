@@ -20,16 +20,20 @@ class ExperimentControl():
   def step_state(self, req):
     # After init, lock zumy, start cloud publisher, and roach controller
     if self.state == 'init':
-      self.proxies['zumy'](1)
-      self.proxies['cloud'](0)
-      self.proxies['roach'](0)
-      self.state = 'moving'
+      if req.step == 1:
+        self.state = 'saving'
+      else:
+        self.proxies['zumy'](1)
+        self.proxies['cloud'](0)
+        self.proxies['roach'](0)
+        self.state = 'moving'
 
     # If step == 1, end experiment and save, otherwise toggle to stuck
     elif self.state == 'moving':
       if req.step == 1:
         self.state = 'saving'
       else:
+        self.proxies['cloud'](0)
         self.proxies['stuck'](0)
         self.proxies['roach'](0)
         self.state = 'stuck'
@@ -39,6 +43,7 @@ class ExperimentControl():
       if req.step == 1:
         self.state = 'saving'
       else:
+        self.proxies['cloud'](0)
         self.proxies['stuck'](0)
         self.proxies['roach'](0)
         self.state = 'moving'

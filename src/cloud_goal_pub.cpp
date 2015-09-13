@@ -83,7 +83,7 @@ class CloudGoalPublisher {
 		ros::Subscriber fail_sub_;			// subcribes to /fail from roach_control_pub.cpp
 		ros::Subscriber camera_info_sub_;	// subscribes to /usb_cam/camera_info to get camera projection matrixi
     ros::Publisher state_pub_;
-
+    
 		tf::TransformListener transform_listener;
 		tf::TransformBroadcaster homography_broadcaster_;
 
@@ -711,39 +711,6 @@ class CloudGoalPublisher {
 			cout << "IN COMPUTE COVERAGE RATIO: occupied_regions = " << occupied_regions << ", total_regions = " << total_regions << ", coverage_ratio = " << coverage_ratio << endl;
 		}
     
-    bool cloud_step(coop_pcl::Step::Request &req, coop_pcl::Step::Response &res) {
-      switch(state) {
-        case STATE_INIT: {
-          if(req.step == 1) {
-            state = STATE_SAVING;
-          } else {
-            state = STATE_MOVING;
-          }
-          break;
-        }
-        case STATE_MOVING: {
-          if(req.step == 1) {
-            state = STATE_SAVING;
-          } else {
-            state = STATE_STUCK;
-          }
-          break;
-        }
-        case STATE_STUCK: {
-          if(req.step == 1) {
-            state = STATE_SAVING;
-          } else {
-            state = STATE_MOVING;
-          }
-          break;
-        }
-        default: {
-          break;
-        }
-      }
-      return true;
-    }
-    
     void updateRoachGoal(bool &setGoal, string ar_marker) {
       /*cout << "In run():" << endl;
       cout << "		success_.data = ";
@@ -814,6 +781,41 @@ class CloudGoalPublisher {
         }
       }
     }
+    
+    bool cloud_step(coop_pcl::Step::Request &req, coop_pcl::Step::Response &res) {
+      cout << "CLOUD_STEP: " << state << " : " << req.step << endl;
+      switch(state) {
+        case STATE_INIT: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_MOVING;
+          }
+          break;
+        }
+        case STATE_MOVING: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_STUCK;
+          }
+          break;
+        }
+        case STATE_STUCK: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_MOVING;
+          }
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      return true;
+    }
+    
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
 		 *
 		 * NOTE: roach_control_pub's exploration method needs to run at lower Hz then 
@@ -834,10 +836,10 @@ class CloudGoalPublisher {
 			ros::Rate loop_rate(2);
 
 			/*************** SET UP HOMOGRAPHY & SET INITIAL GOAL FOR VELOCIROACH **************/
-			computeHomography(ar_marker);
-			hom_transform = getHomographyTransform(ar_marker);
-			setCamCloud();
-			assignGoal(ar_marker);
+			//computeHomography(ar_marker);
+			//hom_transform = getHomographyTransform(ar_marker);
+			//setCamCloud();
+			//assignGoal(ar_marker);
 			// setup max octree bounding box to be the size of the homography_plane
 			//setOctreeBoundingBox();
 			/***********************************************************************************/
@@ -855,9 +857,19 @@ class CloudGoalPublisher {
               // if we haven't setup the transform successfully yet, attempt to 
               //broadcast homography transform with parent ar_marker
               try {
+              /*
                 homography_broadcaster_.sendTransform(
                   tf::StampedTransform(hom_transform, ros::Time::now(),
                   ar_marker, "homography_init"));
+                  */
+                tf::Transform transform;
+                transform.setOrigin( tf::Vector3(0.0, 0.0, 0.0) );
+                tf::Quaternion q;
+                q.setRPY(0.0, 0.0, 0.0);
+                transform.setRotation(q);
+                homography_broadcaster_.sendTransform(
+                  tf::StampedTransform(transform, ros::Time::now(),
+                  "map", "homography_init"));
               } catch (tf::TransformException ex) {
                 ROS_INFO("%s",ex.what());
               }
@@ -982,5 +994,9 @@ int main(int argc, char** argv) {
   cout << "Octree Resolution: " << resolution << endl;
 
   CloudGoalPublisher driver(nh, width, resolution);
+  
+  ros::ServiceServer cloud_step_server = nh.advertiseService(
+    "cloud_step", &CloudGoalPublisher::cloud_step, &driver);
+  
   driver.run(pcd_filename);
 }

@@ -12,6 +12,7 @@ class StuckCounterClass():
 
     self.last_pose = None
     self.stuck_poses = PoseArray()
+    self.stuck_poses.header.frame_id = 'map'
     self.stuck = 0
 
   def stuck_counter(self,req):

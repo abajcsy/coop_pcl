@@ -13,13 +13,6 @@
 <!-- TRACK AR TAG BUNDLES RELATIVE TO MASTER TAG ON TOP OF ROBOT -->
 <include file="$(find coop_pcl)/launch/track_roach.launch" />
 
-<!-- GENERATE POINT CLOUD FROM AR TAGS -->
-<!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
-<arg name="pcd_file" default="NULL"/>			
-<arg name="cloud_width" default="15000" /> 
-<arg name="resolution" default="0.005" /> 
-<node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen" args="$(arg pcd_file) $(arg resolution) $(arg cloud_width)" />
-
 <!-- CONTROL VELOCIROACH (USE manual OR random OR position) -->
 <arg name="roach_control" default="manual" />
 <arg name="robot_name" default="robot0" />
@@ -28,16 +21,28 @@
   <arg name="robot_name" value="$(arg robot_name)" />
 </include>
 
+<!-- GENERATE EXPERIMENT NAME -->
+<arg name="timestamp" default="" />
+<arg name="exp_prefix" default="$(find coop_pcl)/data/$(arg vision)_$(arg roach_control)_$(arg timestamp)" />
+
+<!-- GENERATE POINT CLOUD FROM AR TAGS -->
+<!-- NOTE: if pcd_file is NULL, then pcd file will not be saved. Put full path to pcd file if you want to save it. -->
+<arg name="pcd_path" default="$(arg exp_prefix).pcd" />	
+<arg name="cloud_width" default="15000" /> 
+<arg name="resolution" default="0.005" />
+<node name="pt_cloud" pkg="coop_pcl" type="cloud_goal_pub" output="screen"
+  args="$(arg pcd_path) $(arg resolution) $(arg cloud_width)" />
+
 
 <!-- EXPERIMENT CONTROL -->
-<node name="experiment_control" pkg="coop_pcl" type="experiment_control.py" output="screen" />
+<node name="experiment_control" pkg="coop_pcl" type="experiment_control.py" 
+  output="screen" />
 <node name="stuck_counter" pkg="coop_pcl" type="stuck_counter.py" output="screen" />
 
 <!-- BAG RECORD -->
-<arg name="timestamp" default="" />
-<arg name="bag_path" default="$(find coop_pcl)/data/$(arg vision)_$(arg roach_control)_$(arg timestamp).bag" />
+<arg name="bag_path" default="$(arg exp_prefix).bag" />
 <node pkg="rosbag" type="record" name="rosbag_record"
-  args="-O $(arg bag_path) /tf /stuck_poses /stuck" />
+  args="-O $(arg bag_path) /tf /stuck_poses /experiment_state /zumy_state /roach_state /cloud_state /stuck_state " />
 
 <!-- RUN RVIZ -->
 <node name="rviz" pkg="rviz" type="rviz" args="-d $(find coop_pcl)/rviz/rviz_config.rviz"/>
