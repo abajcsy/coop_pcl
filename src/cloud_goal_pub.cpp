@@ -11,6 +11,7 @@
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/Quaternion.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/String.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <tf/transform_broadcaster.h>
@@ -29,6 +30,7 @@
 #include "opencv2/imgproc/imgproc.hpp"
 
 #include <coop_pcl/exploration_info.h>
+#include <coop_pcl/Step.h>
 
 // VelociRoACH measurements in meters
 #define ROACH_W 0.07
@@ -44,12 +46,20 @@
 
 #define PI 3.14159265
 
+#define STATE_INIT 0
+#define STATE_MOVING 1
+#define STATE_STUCK 2
+#define STATE_SAVING 3
+#define STATE_DONE 4
+
 using namespace std;
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 typedef pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> OctreeSearch;
 
 static struct termios oldt, newt;
+
+static const char* const state_names[] = {"init","moving","stuck","saving","done"};
 
 /* THIS CLASS IS MEANT TO BE USED TOGETHER WITH ROACH_CONTROL_PUB.CPP
  * Together, cloud_goal_pub.cpp publishes goal points for the roach
@@ -71,7 +81,8 @@ class CloudGoalPublisher {
 		ros::Publisher marker_array_pub_;	// publishes marker array to /visualization_marker_array
 		ros::Subscriber success_sub_;		// subcribes to /success from roach_control_pub.cpp
 		ros::Subscriber fail_sub_;			// subcribes to /fail from roach_control_pub.cpp
-		ros::Subscriber camera_info_sub_;	// subscribes to /usb_cam/camera_info to get camera projection matrix
+		ros::Subscriber camera_info_sub_;	// subscribes to /usb_cam/camera_info to get camera projection matrixi
+    ros::Publisher state_pub_;
 
 		tf::TransformListener transform_listener;
 		tf::TransformBroadcaster homography_broadcaster_;
@@ -102,6 +113,9 @@ class CloudGoalPublisher {
 			double f = (double)rand() / RAND_MAX;
 			return fMin + f * (fMax - fMin);
 		}
+
+    // Global node state
+    int state;
 
 		/* Implements a non-blocking getchar() in Linux. Function modifying the terminal settings to 
 		 * disable input buffering. 
@@ -146,6 +160,7 @@ class CloudGoalPublisher {
 
 			marker_pub_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 1);
 			marker_array_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
+      state_pub_ = nh_.advertise<std_msgs::String>("cloud_state",1);
 
 			PointCloud::Ptr cloud(new PointCloud); 	
 			cloud_ = cloud;															
@@ -182,6 +197,9 @@ class CloudGoalPublisher {
 				}
 				cout << endl;			
 			}
+
+      // Initialize node state
+      state = STATE_INIT;
 		}
 
 		/* Callback function used to set if roach has reached the goal point.
@@ -366,12 +384,12 @@ class CloudGoalPublisher {
 			homography_ = computeHomography(roach_corners, img_corners);	
 			homography_inverse_ = homography_.inv();
 
-			for(int i = 0; i < homography_.rows; i++){
+			/*for(int i = 0; i < homography_.rows; i++){
 				for(int j = 0; j < homography_.cols; j++){
 					cout << homography_.at<double>(i,j) << " ";
 				}
 				cout << endl;
-			}
+			}*/
 		}
 
 		/* Computes homography matrix that transforms from real-life coordinates to pixel coordinates. 
@@ -692,7 +710,110 @@ class CloudGoalPublisher {
 			double coverage_ratio = occupied_regions/total_regions;
 			cout << "IN COMPUTE COVERAGE RATIO: occupied_regions = " << occupied_regions << ", total_regions = " << total_regions << ", coverage_ratio = " << coverage_ratio << endl;
 		}
-	
+    
+    bool cloud_step(coop_pcl::Step::Request &req, coop_pcl::Step::Response &res) {
+      switch(state) {
+        case STATE_INIT: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_MOVING;
+          }
+          break;
+        }
+        case STATE_MOVING: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_STUCK;
+          }
+          break;
+        }
+        case STATE_STUCK: {
+          if(req.step == 1) {
+            state = STATE_SAVING;
+          } else {
+            state = STATE_MOVING;
+          }
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      return true;
+    }
+    
+    void updateRoachGoal(bool &setGoal, string ar_marker) {
+      /*cout << "In run():" << endl;
+      cout << "		success_.data = ";
+      if(success_.data)
+        cout << "TRUE" << endl;
+      else
+        cout << "FALSE" << endl;
+      */
+
+      // if roach reached goal and haven't set new goal
+      if(success_.data && !setGoal){ 
+        //cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
+        assignGoal(ar_marker);
+        setGoal = true;
+      }else if (!success_.data && setGoal){
+        setGoal = false;
+      }else if(!success_.data && fail_flag_.data && !setGoal){
+        //cout << "		CloudGoal: Roach FAILED to reached goal --> updating goal grid & setting new goal..." << endl;
+        updateGoalGrid();
+        assignGoal(ar_marker);
+        setGoal = true;
+      }
+      /*
+      cout << "		setGoal = ";
+      if(setGoal)
+        cout << "TRUE" << endl;
+      else
+        cout << "FALSE" << endl;
+
+      cout << "		fail_flag_.data = ";
+      if(fail_flag_.data)
+        cout << "TRUE" << endl;
+      else
+        cout << "FALSE" << endl;
+        */
+    }
+
+    void updateRoachCloud(string ar_marker) {
+      for(double x = -0.055; x <= 0.055; x += 0.02){
+        for(double y = -0.035; y <= 0.035; y += 0.02){
+          //double x = -0.055; double y = 0.035;
+          // get stamped pose wrt ar_marker (note: -0.08 is the z-offset for the base of the roach wrt the top ar marker)
+          tf::Stamped<tf::Pose> corner(
+            tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.08)),
+            ros::Time(0), ar_marker);
+          
+          tf::Stamped<tf::Pose> transformed_corner;
+          // transform pose wrt usb_cam
+          try {
+            transform_listener.transformPose("usb_cam", corner, transformed_corner);
+          } catch (tf::TransformException ex) {
+            ROS_INFO("%s",ex.what());
+          }
+          // push xyz coord of pt to point cloud
+          double tf_x = transformed_corner.getOrigin().x();
+          double tf_y = transformed_corner.getOrigin().y();
+          double tf_z = transformed_corner.getOrigin().z();
+    
+          cloud_->points[num_pts].x = tf_x;
+          cloud_->points[num_pts].y = tf_y;
+          cloud_->points[num_pts].z = tf_z;
+          
+          // update octree cloud pointer and add points to octree
+          octree_search_->setInputCloud(cloud_);
+          octree_search_->addPointsFromInputCloud();
+
+          num_pts+=1;
+        }
+      }
+    }
 		/* Runs point cloud publishing and publishes navigation goals for VelociRoACH
 		 *
 		 * NOTE: roach_control_pub's exploration method needs to run at lower Hz then 
@@ -708,7 +829,7 @@ class CloudGoalPublisher {
 			int maxCloudSize = cloud_->width*cloud_->height;
 			bool setGoal = false;
 			bool setTransform = false;
-			cout << "Press 'q' to quit data collection and save point cloud.\n";
+			//cout << "Press 'q' to quit data collection and save point cloud.\n";
 
 			ros::Rate loop_rate(2);
 
@@ -716,128 +837,120 @@ class CloudGoalPublisher {
 			computeHomography(ar_marker);
 			hom_transform = getHomographyTransform(ar_marker);
 			setCamCloud();
-
 			assignGoal(ar_marker);
 			// setup max octree bounding box to be the size of the homography_plane
 			//setOctreeBoundingBox();
 			/***********************************************************************************/
 
-			while(nh_.ok() && num_pts < maxCloudSize && input != 'q'){
+			while(nh_.ok() /*&& num_pts < maxCloudSize && input != 'q'*/){
+        /*
 				input = getch();   // check if user pressed q to quit data collection
 				if (input == 'q'){
 					break;
-				}
+				}*/
 				
-				if(!setTransform){
-					// if we haven't setup the transform successfully yet, attempt to broadcast homography transform with parent ar_marker
-					homography_broadcaster_.sendTransform(tf::StampedTransform(hom_transform, ros::Time::now(), ar_marker, "homography_init"));
-					try{
-					  ros::Time now = ros::Time::now();
-					  transform_listener.waitForTransform("usb_cam", "homography_init", ros::Time::now(), ros::Duration(1.2));
-					  transform_listener.lookupTransform("usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
-					  setTransform = true;
-					  cout << "------SET TRANSFORM------" << endl;
-					}
-					catch (tf::TransformException ex){
-					  ROS_INFO("%s",ex.what());
-					}
-				}else{
-					homography_broadcaster_.sendTransform(tf::StampedTransform(usb_hom_transform, ros::Time::now(), "usb_cam", "homography_plane"));
-					// publish point cloud representing FOV of camera
-					hom_cloud_pub_.publish(hom_cloud_);
+        switch(state) {
+          case STATE_INIT: {
+            if(!setTransform) {
+              // if we haven't setup the transform successfully yet, attempt to 
+              //broadcast homography transform with parent ar_marker
+              try {
+                homography_broadcaster_.sendTransform(
+                  tf::StampedTransform(hom_transform, ros::Time::now(),
+                  ar_marker, "homography_init"));
+              } catch (tf::TransformException ex) {
+                ROS_INFO("%s",ex.what());
+              }
+
+              try {
+                //ros::Time now = ros::Time::now();
+                //transform_listener.waitForTransform(
+                //  "usb_cam", "homography_init", ros::Time::now(), ros::Duration(1.2));
+                transform_listener.lookupTransform(
+                  "usb_cam", "homography_init", ros::Time(0), usb_hom_transform);
+                setTransform = true;
+                //cout << "------SET TRANSFORM------" << endl;
+              }
+              catch (tf::TransformException ex){
+                ROS_INFO("%s",ex.what());
+              }
+            }
+            break;
+          }
+
+          case STATE_MOVING: {
+            if (num_pts < maxCloudSize) {
+              /********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
+              updateRoachCloud(ar_marker);
+
+              if (setTransform) {
+                /*************** GET GOAL FOR VELOCIROACH **************/
+                updateRoachGoal(setGoal, ar_marker);
+              }
+            } else {
+					    //cout << "Finished gathering and publishing point cloud.\n";
+              state = STATE_SAVING;
+            }
+            break;
+          }
+
+          case STATE_SAVING: {
+            if(pcd_filename.compare("NULL") != 0){
+              pcl::io::savePCDFileASCII(pcd_filename, *cloud_);
+              cout << "Saved " << num_pts << " points out of total point cloud space of " << cloud_->points.size() << " to " << pcd_filename << endl;				
+            }else{
+              cout << "User specified NOT to save point cloud.\n";
+            }
+            state = STATE_DONE;
+            break;
+          }
+
+          default: {
+            break;
+          }
+        }
+
+        //cout << "		Publishing point cloud.\n";
+        pcl_conversions::toPCL(ros::Time::now(), cloud_->header.stamp);
+        cloud_pub_.publish(cloud_);
+        //cout << "		Finished publishing point cloud..." << endl;
+
+        if (setTransform) {
+          try {
+					  homography_broadcaster_.sendTransform(
+              tf::StampedTransform(usb_hom_transform, ros::Time::now(),
+              "usb_cam", "homography_plane"));
+          } catch (tf::TransformException ex) {
+            ROS_INFO("%s",ex.what());
+          }
 					
-          /*cout << "------PUBLISHED HOMOGRAPHY CLOUD------" << endl;
+          // publish point cloud representing FOV of camera
+			    pcl_conversions::toPCL(ros::Time::now(), hom_cloud_->header.stamp);
+					hom_cloud_pub_.publish(hom_cloud_);
+          //cout << "------PUBLISHED HOMOGRAPHY CLOUD------" << endl;
 
-					cout << "In run():" << endl;
-					cout << "		success_.data = ";
-					if(success_.data)
-						cout << "TRUE" << endl;
-					else
-						cout << "FALSE" << endl;
-          */
-
-					/*************** GET GOAL FOR VELOCIROACH **************/
-					// if roach reached goal and haven't set new goal
-					if(success_.data && !setGoal){ 
-						//cout << "		CloudGoal: Roach reached goal --> setting new goal..." << endl;
-						assignGoal(ar_marker);
-						setGoal = true;
-					}else if (!success_.data && setGoal){
-						setGoal = false;
-					}else if(!success_.data && fail_flag_.data && !setGoal){
-						//cout << "		CloudGoal: Roach FAILED to reached goal --> updating goal grid & setting new goal..." << endl;
-						updateGoalGrid();
-						assignGoal(ar_marker);
-						setGoal = true;
-					}
-					// publish either updated goal or old goal
-					goal_pub_.publish(goal_pt_);
-          /*
-					cout << "		setGoal = ";
-					if(setGoal)
-						cout << "TRUE" << endl;
-					else
-						cout << "FALSE" << endl;
-
-					cout << "		fail_flag_.data = ";
-					if(fail_flag_.data)
-						cout << "TRUE" << endl;
-					else
-						cout << "FALSE" << endl;
-            */
-					/*******************************************************/	
+          // Publish roach goal in homography plane
+          goal_pub_.publish(goal_pt_);
 				}
 				
-
-				/********* PUBLISH POINT CLOUD UNDER VELOCIROACH *********/
-				for(double x = -0.055; x <= 0.055; x += 0.02){
-					for(double y = -0.035; y <= 0.035; y += 0.02){
-						//double x = -0.055; double y = 0.035;
-						// get stamped pose wrt ar_marker (note: -0.08 is the z-offset for the base of the roach wrt the top ar marker)
-						tf::Stamped<tf::Pose> corner(tf::Pose(tf::Quaternion(0, 0, 0, 1), tf::Vector3(x, y, -0.08)),ros::Time(0), ar_marker);
-						tf::Stamped<tf::Pose> transformed_corner;
-						// transform pose wrt usb_cam
-						transform_listener.transformPose("usb_cam", corner, transformed_corner);
-						// push xyz coord of pt to point cloud
-						double tf_x = transformed_corner.getOrigin().x();
-						double tf_y = transformed_corner.getOrigin().y();
-						double tf_z = transformed_corner.getOrigin().z();
-			
-						cloud_->points[num_pts].x = tf_x;
-						cloud_->points[num_pts].y = tf_y;
-						cloud_->points[num_pts].z = tf_z;
-						
-						// update octree cloud pointer and add points to octree
-						octree_search_->setInputCloud(cloud_);
-					 	octree_search_->addPointsFromInputCloud();
-
-						num_pts+=1;
-					}
-				}
-				//cout << "		Publishing point cloud.\n";
-				pcl_conversions::toPCL(ros::Time::now(), cloud_->header.stamp);
-				cloud_pub_.publish(cloud_);
-				//cout << "		Finished publishing point cloud..." << endl;
-				/*********************************************************/
-
 				//double coverage_ratio = computeCoverageRatio();
+        
+        std_msgs::String state_msg;
+        std::stringstream ss;
+        ss << state_names[state];
+        state_msg.data = ss.str();
+        state_pub_.publish(state_msg);
+
 				ros::spinOnce();
 				loop_rate.sleep();
 
-				// if program was terminated or point cloud filled, save out the point cloud and end program 
-				if(input == 'q' || num_pts >= cloud_->points.size()) {	
-					cout << "Finished gathering and publishing point cloud.\n";
-
-					if(pcd_filename.compare("NULL") != 0){
-						pcl::io::savePCDFileASCII(pcd_filename, *cloud_);
-					  	cout << "Saved " << num_pts << " points out of total point cloud space of " << cloud_->points.size() << " to " << pcd_filename << endl;				
-					}else{
-						cout << "User specified NOT to save point cloud.\n";
-					}
+				// if program was terminated or point cloud filled
+        //save out the point cloud and end program 
+				/*if(input == 'q') {	
 					resetKeyboardSettings();
 					cout << "Reset keyboard settings and shutting down.\n";
 					ros::shutdown();
-				}
+				}*/
 			}
 		}
 };
