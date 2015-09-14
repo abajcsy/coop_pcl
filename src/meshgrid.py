@@ -6,6 +6,9 @@ import glob, os, sys
 import json, numpy
 
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
+from matplotlib.legend_handler import HandlerLine2D
 
 def mesh_to_triangles(mesh):
   triangles = PolyLine()
@@ -222,7 +225,11 @@ def closest_grid_index(cxs, cys, point):
   return (xi,yi)
 
 def process_result(triangles, zumy, stuck, end = (0.2,0.0), delta=0.02,**kwargs):
-  zumy_region = get_circle_regions([zumy],0.15)[0]
+  
+  zumy_circle = get_circle_regions([zumy],0.06)[0]
+  zumy_frontier = (triangles & get_circle_regions([zumy],0.2)[0]).simplified()
+
+  zumy_region = (zumy_circle + zumy_frontier).hull().simplified()
 
   robot_region = triangles | zumy_region
 
@@ -250,31 +257,46 @@ def process_result(triangles, zumy, stuck, end = (0.2,0.0), delta=0.02,**kwargs)
     'zumy_path':zumy_path
   }
 
-def plot_result(robot_region, stuck_regions, cxs, cys, safe_grid, robot_grid, roach, zumy_path, **kwargs):
+def plot_result(
+  robot_region, stuck_regions, cxs, cys, safe_grid, robot_grid, roach, zumy_path,
+  legend=False, **kwargs):
   plotter = Plotter()
   
+  environment = PolyLine([(-0.27,-0.135),(-0.27,0.6),(0.3,0.6),(0.3,-0.135)],polygon=True)
+  environment.plot(plotter,linewidth=2,label='environment_bounds')
+
+  hazzard = PatchCollection([Rectangle((-0.02,0.095),0.32,0.275)],cmap=plt.cm.hsv,alpha=0.2)
+  hazzard.set_array(numpy.array([0]))
+  plotter.ax.add_collection(hazzard)
+
   region_outline = robot_region - PolyLine()
-  region_outline.plot(plotter,linewidth='2')
+  region_outline.plot(plotter,label='exploration_bounds')
 
   stuck_regions.plot(plotter,'red')
 
   for i in range(len(cxs)):
     for j in range(len(cys)):
       if not safe_grid[i,j]:
-        plotter.ax.plot(cxs[i],cys[j],'rx')
+        plotter.ax.plot(cxs[i],cys[j],'rx',label='stuck_points')
       elif robot_grid[i,j]:
-        plotter.ax.plot(cxs[i],cys[j],'g.')
+        plotter.ax.plot(cxs[i],cys[j],'g.',label='safe_points')
   
   for path in roach:
     xy = numpy.array([[x,y] for x,y,t in path])
-    plotter.add_polylines([xy.T],'blue')
+    plotter.add_polylines([xy.T],'blue',label='roach_paths')
   
   zc = [(cxs[xi],cys[yi]) for xi,yi in zumy_path] 
   zumy_path_pl = PolyLine(zc)
-  zumy_path_pl.plot(plotter,linewidth=4)
+  zumy_path_pl.plot(plotter,linewidth=4,label='zumy_path')
 
-  plotter.ax.plot(zc[0][0],zc[0][1],'yo',markersize=15.0)
-  plotter.ax.plot(zc[-1][0],zc[-1][1],'y*',markersize=15.0)
+  plotter.ax.plot(zc[0][0],zc[0][1],'yo',markersize=15.0,label='zumy_start')
+  plotter.ax.plot(zc[-1][0],zc[-1][1],'y*',markersize=15.0,label='zumy_goal')
+ 
+  legend_map = {label:handle for handle,label in zip(*plotter.ax.get_legend_handles_labels())}
+  single_handler = HandlerLine2D(numpoints=1)
+  single_labels = ['stuck_points','safe_points','zumy_start','zumy_goal']
+  handler_map = {legend_map[label]:single_handler for label in single_labels}
+  plotter.ax.legend(legend_map.values(),legend_map.keys(),handler_map=handler_map)
 
   return plotter
 
