@@ -4,6 +4,8 @@ import sys
 
 if __name__ == '__main__':
   pcd_file = sys.argv[1]
+  out_file = sys.argv[2]
+
   f = open(pcd_file,'r')
   lines = f.readlines()
   f.close()
@@ -19,7 +21,7 @@ if __name__ == '__main__':
   lines[6] = 'WIDTH %d\n' % n_points
   lines[9] = 'POINTS %d\n' % n_points
 
-  f = open(pcd_file, 'w')
+  f = open(out_file, 'w')
   for line in lines:
     f.write(line)
   f.close()
