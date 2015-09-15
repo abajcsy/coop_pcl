@@ -20,3 +20,4 @@ EXPERIMENT_CALIB_DIR=$(shell rospack find experiment_calib)
 	$(EXPERIMENT_CALIB_DIR)/src/avg_bag_tf.py $*.bag $@
 
 .PRECIOUS: %.pcd %.bag %.json %.pdf
+.SECONDARY:

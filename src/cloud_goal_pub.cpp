@@ -836,12 +836,12 @@ class CloudGoalPublisher {
 			ros::Rate loop_rate(2);
 
 			/*************** SET UP HOMOGRAPHY & SET INITIAL GOAL FOR VELOCIROACH **************/
-			//computeHomography(ar_marker);
-			//hom_transform = getHomographyTransform(ar_marker);
-			//setCamCloud();
-			//assignGoal(ar_marker);
+			computeHomography(ar_marker);
+			hom_transform = getHomographyTransform(ar_marker);
+			setCamCloud();
+			assignGoal(ar_marker);
 			// setup max octree bounding box to be the size of the homography_plane
-			//setOctreeBoundingBox();
+			setOctreeBoundingBox();
 			/***********************************************************************************/
 
 			while(nh_.ok() /*&& num_pts < maxCloudSize && input != 'q'*/){

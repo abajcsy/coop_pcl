@@ -6,11 +6,11 @@ from geometry_msgs.msg import Twist
 from coop_pcl.srv import *
 import random
 
-MAX_VEL = 0.4
+MAX_VEL = 0.6
 FWD_VEL = MAX_VEL
 REV_VEL = -MAX_VEL
 
-MAX_ANG = 0.5
+MAX_ANG = 0.7
 FWD_ANG = MAX_ANG
 REV_ANG = -MAX_ANG
 

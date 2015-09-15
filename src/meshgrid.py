@@ -147,7 +147,11 @@ def plan_path(grid, start=None, end=None):
     start = random_grid_index(grid)
   if end is None:
     end = random_grid_index(grid)
-  assert(grid[start] and grid[end])
+  if not grid[start]:
+    print "WARNING: start is not in grid"
+  if not grid[end]:
+    print "WARNING: end is not in grid"
+
   path_grid = numpy.inf * numpy.ones(grid.shape, dtype=numpy.int64)
   path_grid[~grid] = numpy.nan
   path_grid[start] = 0
@@ -164,8 +168,8 @@ def plan_path(grid, start=None, end=None):
       new_vals[i] = min(dists)
     path_grid[zip(*front)] = new_vals
 
-  if path_grid[end] == numpy.inf:
-    return []
+  if numpy.isinf(path_grid[end]) or numpy.isnan(path_grid[end]):
+    return [],path_grid
   else:
     path = [end]
     while path_grid[path[-1]] != 0:
@@ -262,7 +266,7 @@ def plot_result(
   legend=False, **kwargs):
   plotter = Plotter()
   
-  environment = PolyLine([(-0.27,-0.135),(-0.27,0.6),(0.3,0.6),(0.3,-0.135)],polygon=True)
+  environment = PolyLine([(-0.3,-0.135),(-0.3,0.6),(0.3,0.6),(0.3,-0.135)],polygon=True)
   environment.plot(plotter,linewidth=2,label='environment_bounds')
 
   hazzard = PatchCollection([Rectangle((-0.02,0.095),0.32,0.275)],cmap=plt.cm.hsv,alpha=0.2)
@@ -284,19 +288,22 @@ def plot_result(
   for path in roach:
     xy = numpy.array([[x,y] for x,y,t in path])
     plotter.add_polylines([xy.T],'blue',label='roach_paths')
-  
-  zc = [(cxs[xi],cys[yi]) for xi,yi in zumy_path] 
-  zumy_path_pl = PolyLine(zc)
-  zumy_path_pl.plot(plotter,linewidth=4,label='zumy_path')
-
-  plotter.ax.plot(zc[0][0],zc[0][1],'yo',markersize=15.0,label='zumy_start')
-  plotter.ax.plot(zc[-1][0],zc[-1][1],'y*',markersize=15.0,label='zumy_goal')
  
-  legend_map = {label:handle for handle,label in zip(*plotter.ax.get_legend_handles_labels())}
-  single_handler = HandlerLine2D(numpoints=1)
-  single_labels = ['stuck_points','safe_points','zumy_start','zumy_goal']
-  handler_map = {legend_map[label]:single_handler for label in single_labels}
-  plotter.ax.legend(legend_map.values(),legend_map.keys(),handler_map=handler_map)
+  if len(zumy_path):
+    zc = [(cxs[xi],cys[yi]) for xi,yi in zumy_path] 
+    zumy_path_pl = PolyLine(zc)
+    zumy_path_pl.plot(plotter,linewidth=4,label='zumy_path')
+
+    plotter.ax.plot(zc[0][0],zc[0][1],'yo',markersize=15.0,label='zumy_start')
+    plotter.ax.plot(zc[-1][0],zc[-1][1],'y*',markersize=15.0,label='zumy_goal')
+  
+  if legend:
+    legend_map = {label:handle for handle,label in zip(*plotter.ax.get_legend_handles_labels())}
+    single_handler = HandlerLine2D(numpoints=1)
+    single_labels = ['stuck_points','safe_points','zumy_start','zumy_goal']
+    available_labels = [l for l in single_labels if l in legend_map.keys()]
+    handler_map = {legend_map[label]:single_handler for label in available_labels}
+    plotter.ax.legend(legend_map.values(),legend_map.keys(),handler_map=handler_map)
 
   return plotter
 

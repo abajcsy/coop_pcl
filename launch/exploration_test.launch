@@ -14,7 +14,7 @@
 <include file="$(find coop_pcl)/launch/track_roach.launch" />
 
 <!-- CONTROL VELOCIROACH (USE manual OR random OR position) -->
-<arg name="roach_control" default="manual" />
+<arg name="roach_control" default="position" />
 <arg name="robot_name" default="robot0" />
 
 <include file="$(find coop_pcl)/launch/$(arg roach_control)_roach_control.launch">
