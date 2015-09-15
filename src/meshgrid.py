@@ -211,6 +211,9 @@ def load_result(stl_file, stuck_zumy_file):
   
   data.update({'cam_h':cam_h, 'triangles':triangles})
   
+  data['stuck'] = [(x,y,t) for x,y,t in data['stuck'] if y > -0.1]
+  data['roach'] = [[(x,y,t) for x,y,t in path if y > -0.1] for path in data['roach']]
+
   return data
 
 def get_circle_regions(centers,radius=0.05):
@@ -304,6 +307,11 @@ def plot_result(
     available_labels = [l for l in single_labels if l in legend_map.keys()]
     handler_map = {legend_map[label]:single_handler for label in available_labels}
     plotter.ax.legend(legend_map.values(),legend_map.keys(),handler_map=handler_map)
+
+  plotter.ax.set_xlabel('x position (m)')
+  plotter.ax.set_ylabel('y position (m)')
+  
+  plotter.ax.axis([-0.4,0.4,-0.2,0.7])
 
   return plotter
 

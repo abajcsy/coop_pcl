@@ -13,8 +13,9 @@ if __name__ == '__main__':
   for line in lines[:]:
     vs = line.split()
     if len(vs) == 3:
-      norm = sum([float(v)**2 for v in vs])**0.5
-      if norm == 0 or norm > 1.0:
+      vs = [float(v) for v in vs]
+      norm = sum([v**2 for v in vs])**0.5
+      if vs[1] > 0.1 or norm == 0 or norm > 1.0:
         lines.remove(line)
 
   n_points = (len(lines)-11)
