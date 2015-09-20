@@ -61,8 +61,9 @@ def get_stuck_roach_poses(cam_H, bag_file):
       if len(path) is 0:
         roach_paths.remove(path)
 
-    for pose_msg in last_stuck.poses:
-      stuck_poses.append(pose_msg_to_xyt(pose_msg))
+    if last_stuck is not None:
+      for pose_msg in last_stuck.poses:
+        stuck_poses.append(pose_msg_to_xyt(pose_msg))
     
     bag.close()
 
@@ -81,7 +82,11 @@ def get_zumy_pose(avg_file):
       if check_frame(tf_msg, 'usb_cam', 'zumy'):
         usb_zumy_tf = tf_msg
     cam_H = tf_msg_to_H(map_usb_tf)
-    zumy_H = cam_H.dot(tf_msg_to_H(usb_zumy_tf)) 
+    if usb_zumy_tf is None:
+      zumy_H = translation_matrix([0,0.1,0]).dot(rotation_matrix(-1.57,[0,1,0]))
+      cam_H = numpy.array([[-0.9415944834953281, -0.09989871455740931, 0.32158991818921234, -0.18557658368543253], [-0.33391297484670646, 0.1533003281798, -0.9300543718562849, 0.5085412217406818], [0.04361139621922025, -0.983117112153859, -0.17770422029334998, 0.10713219017742055], [0.0, 0.0, 0.0, 1.0]])
+    else:
+      zumy_H = cam_H.dot(tf_msg_to_H(usb_zumy_tf)) 
     zumy_pose = H_to_xyt(zumy_H) 
     avg.close()
 

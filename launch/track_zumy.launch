@@ -1,8 +1,8 @@
 <launch>
 
-<arg name="environment_bundle_markers" value="ar_marker_16 ar_marker_10 ar_marker_11 ar_marker_13 ar_marker_14 ar_marker_17" />
+<arg name="environment_bundle_markers" value="ar_marker_16 ar_marker_12 ar_marker_13 ar_marker_14 ar_marker_15 ar_marker_17" />
 
-<node name="environment_filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg environment_bundle_markers)" />
+<node name="environment_filter" pkg="experiment_calib" type="filter_pose.py" args="usb_cam $(arg environment_bundle_markers)" output="screen" />
 
 <node name="environment_tracker" pkg="experiment_calib" type="track_bundle.py" args="usb_cam $(find experiment_calib)/data/environment.bag" output="screen" />
 

@@ -270,16 +270,16 @@ def plot_result(
   plotter = Plotter()
   
   environment = PolyLine([(-0.3,-0.135),(-0.3,0.6),(0.3,0.6),(0.3,-0.135)],polygon=True)
-  environment.plot(plotter,linewidth=2,label='environment_bounds')
+  #environment.plot(plotter,linewidth=2,label='environment_bounds')
 
   hazzard = PatchCollection([Rectangle((-0.02,0.095),0.32,0.275)],cmap=plt.cm.hsv,alpha=0.2)
   hazzard.set_array(numpy.array([0]))
-  plotter.ax.add_collection(hazzard)
+  #plotter.ax.add_collection(hazzard)
 
   region_outline = robot_region - PolyLine()
   region_outline.plot(plotter,label='exploration_bounds')
 
-  stuck_regions.plot(plotter,'red')
+  #stuck_regions.plot(plotter,'red')
 
   for i in range(len(cxs)):
     for j in range(len(cys)):
@@ -306,12 +306,13 @@ def plot_result(
     single_labels = ['stuck_points','safe_points','zumy_start','zumy_goal']
     available_labels = [l for l in single_labels if l in legend_map.keys()]
     handler_map = {legend_map[label]:single_handler for label in available_labels}
-    plotter.ax.legend(legend_map.values(),legend_map.keys(),handler_map=handler_map)
+    plotter.ax.legend(legend_map.values(),legend_map.keys(),ncol=8,
+      bbox_to_anchor=(0.0,1.02,1.0,.102),columnspacing=1.0,handler_map=handler_map)
 
   plotter.ax.set_xlabel('x position (m)')
   plotter.ax.set_ylabel('y position (m)')
   
-  plotter.ax.axis([-0.4,0.4,-0.2,0.7])
+  #plotter.ax.axis([-0.4,0.4,-0.2,0.7])
 
   return plotter
 

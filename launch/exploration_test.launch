@@ -14,7 +14,7 @@
 <include file="$(find coop_pcl)/launch/track_roach.launch" />
 
 <!-- CONTROL VELOCIROACH (USE manual OR random OR position) -->
-<arg name="roach_control" default="position" />
+<arg name="roach_control" default="manual" />
 <arg name="robot_name" default="robot0" />
 
 <include file="$(find coop_pcl)/launch/$(arg roach_control)_roach_control.launch">
@@ -42,7 +42,7 @@
 <!-- BAG RECORD -->
 <arg name="bag_path" default="$(arg exp_prefix).bag" />
 <node pkg="rosbag" type="record" name="rosbag_record"
-  args="-O $(arg bag_path) /tf /stuck_poses /experiment_state /zumy_state /roach_state /cloud_state /stuck_state " />
+  args="-O $(arg bag_path) /tf /goal_pt /stuck_poses /experiment_state /zumy_state /roach_state /cloud_state /stuck_state " />
 
 <!-- RUN RVIZ -->
 <node name="rviz" pkg="rviz" type="rviz" args="-d $(find coop_pcl)/rviz/rviz_config.rviz"/>
